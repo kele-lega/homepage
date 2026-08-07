@@ -2,11 +2,14 @@ services:
   homepage:
     image: ghcr.io/gethomepage/homepage:latest
     container_name: homepage
+    entrypoint: ["/custom-entrypoint.sh"]
+    command: ["node", "server.js"]
     ports:
       - "3001:3000"
     volumes:
       - ./config:/app/config
       - ./public:/app/public
+      - ./entrypoint.sh:/custom-entrypoint.sh:ro
     environment:
-      HOMEPAGE_ALLOWED_HOSTS: localhost:3001,127.0.0.1:3001
+      HOMEPAGE_ALLOWED_HOSTS: localhost:3001,127.0.0.1:3001,103.79.186.22:3001
     restart: unless-stopped
