@@ -1,0 +1,23 @@
+[2026-08-07T03:00:48.135Z] info: kubernetes.yaml was copied to the config folder
+[2026-08-07T03:00:55.713Z] error: Host validation failed for: localhost:3001. Hint: Set the HOMEPAGE_ALLOWED_HOSTS environment variable to allow requests from this host / port.
+[2026-08-07T03:00:55.994Z] error: Host validation failed for: localhost:3001. Hint: Set the HOMEPAGE_ALLOWED_HOSTS environment variable to allow requests from this host / port.
+[2026-08-07T03:00:56.000Z] error: Host validation failed for: localhost:3001. Hint: Set the HOMEPAGE_ALLOWED_HOSTS environment variable to allow requests from this host / port.
+[2026-08-07T03:00:56.006Z] error: Host validation failed for: localhost:3001. Hint: Set the HOMEPAGE_ALLOWED_HOSTS environment variable to allow requests from this host / port.
+[2026-08-07T03:00:56.017Z] error: Host validation failed for: localhost:3001. Hint: Set the HOMEPAGE_ALLOWED_HOSTS environment variable to allow requests from this host / port.
+[2026-08-07T03:00:56.026Z] error: Host validation failed for: localhost:3001. Hint: Set the HOMEPAGE_ALLOWED_HOSTS environment variable to allow requests from this host / port.
+[2026-08-07T03:00:56.033Z] error: Host validation failed for: localhost:3001. Hint: Set the HOMEPAGE_ALLOWED_HOSTS environment variable to allow requests from this host / port.
+[2026-08-07T03:00:56.037Z] error: Host validation failed for: localhost:3001. Hint: Set the HOMEPAGE_ALLOWED_HOSTS environment variable to allow requests from this host / port.
+[2026-08-07T03:00:56.042Z] error: Host validation failed for: localhost:3001. Hint: Set the HOMEPAGE_ALLOWED_HOSTS environment variable to allow requests from this host / port.
+[2026-08-07T03:00:56.048Z] error: Host validation failed for: localhost:3001. Hint: Set the HOMEPAGE_ALLOWED_HOSTS environment variable to allow requests from this host / port.
+[2026-08-07T03:00:56.061Z] error: Host validation failed for: localhost:3001. Hint: Set the HOMEPAGE_ALLOWED_HOSTS environment variable to allow requests from this host / port.
+[2026-08-07T03:00:56.066Z] error: Host validation failed for: localhost:3001. Hint: Set the HOMEPAGE_ALLOWED_HOSTS environment variable to allow requests from this host / port.
+[2026-08-07T03:01:16.669Z] error: Host validation failed for: localhost:3001. Hint: Set the HOMEPAGE_ALLOWED_HOSTS environment variable to allow requests from this host / port.
+[2026-08-07T03:01:16.675Z] error: Host validation failed for: localhost:3001. Hint: Set the HOMEPAGE_ALLOWED_HOSTS environment variable to allow requests from this host / port.
+[2026-08-07T03:01:16.679Z] error: Host validation failed for: localhost:3001. Hint: Set the HOMEPAGE_ALLOWED_HOSTS environment variable to allow requests from this host / port.
+[2026-08-07T03:02:38.990Z] info: docker.yaml was copied to the config folder
+[2026-08-07T03:02:38.992Z] info: services.yaml was copied to the config folder
+[2026-08-07T03:02:38.992Z] info: bookmarks.yaml was copied to the config folder
+[2026-08-07T03:02:38.993Z] info: proxmox.yaml was copied to the config folder
+[2026-08-07T03:02:39.002Z] info: widgets.yaml was copied to the config folder
+[2026-08-07T03:02:39.003Z] info: custom.css was copied to the config folder
+[2026-08-07T03:02:39.003Z] info: custom.js was copied to the config folder
