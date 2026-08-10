@@ -7,6 +7,14 @@
     memory: true
     disk: /
 
+- openmeteo:
+    label: 坪山
+    latitude: 22.72
+    longitude: 114.35
+    timezone: Asia/Shanghai
+    units: metric
+    cache: 5
+
 - search:
     provider: duckduckgo
     target: _blank

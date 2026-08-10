@@ -1,0 +1,365 @@
+/**
+ * Homepage custom.js — iOS/macOS 风格时钟
+ *
+ * 在页面顶部 #widgets-wrap 左侧插入一个跟随 Asia/Shanghai 时区的数字时钟。
+ * 纯客户端注入，每秒刷新，水合后/SPA 切换后自动重新挂载。
+ */
+(function () {
+  "use strict";
+
+  var CLOCK_ID = "ios-clock";
+  var TZ = "Asia/Shanghai";
+  var LOCALE = "zh-CN";
+
+  // 中文星期映射，避免不同 ICU 对 weekday: 'short' 输出差异（"周一"/"星期一"）
+  var WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+
+  function pad(n) {
+    return n < 10 ? "0" + n : "" + n;
+  }
+
+  // 用 Intl 拿到指定时区下的各部分，保证不受本机时区影响
+  function shanghaiParts() {
+    var fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: TZ,
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      second: "numeric",
+      hour12: false,
+      weekday: "short",
+    });
+    var parts = fmt.formatToParts(new Date());
+    var o = {};
+    for (var i = 0; i < parts.length; i++) {
+      o[parts[i].type] = parts[i].value;
+    }
+    // weekday 在 en-US 下是 "Sun/Mon/..."，映射回中文
+    var dowMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    o.weekdayZh = WEEKDAYS[dowMap[o.weekday] !== undefined ? dowMap[o.weekday] : 0];
+    // hour12:false 在某些环境对 0 点可能返回 "24"，归一化为 "00"
+    if (o.hour === "24") o.hour = "00";
+    return o;
+  }
+
+  function buildClock() {
+    var wrap = document.createElement("div");
+    wrap.id = CLOCK_ID;
+    wrap.className = "ios-clock";
+
+    var time = document.createElement("div");
+    time.className = "ios-clock-time";
+
+    var hm = document.createElement("span");
+    hm.className = "ios-clock-hm";
+    var s = document.createElement("span");
+    s.className = "ios-clock-s";
+    time.appendChild(hm);
+    time.appendChild(s);
+
+    var date = document.createElement("div");
+    date.className = "ios-clock-date";
+
+    wrap.appendChild(time);
+    wrap.appendChild(date);
+    return wrap;
+  }
+
+  function tick(node) {
+    var p = shanghaiParts();
+    var hh = pad(parseInt(p.hour, 10));
+    var mm = pad(parseInt(p.minute, 10));
+    var ss = pad(parseInt(p.second, 10));
+    var hmEl = node.querySelector(".ios-clock-hm");
+    var sEl = node.querySelector(".ios-clock-s");
+    var dateEl = node.querySelector(".ios-clock-date");
+    if (hmEl) hmEl.textContent = hh + ":" + mm;
+    if (sEl) sEl.textContent = ":" + ss; // 秒用更小更淡的样式
+    if (dateEl) {
+      dateEl.textContent =
+        p.year + "年" + parseInt(p.month, 10) + "月" + parseInt(p.day, 10) + "日 " + p.weekdayZh;
+    }
+  }
+
+  var timer = null;
+  var mounted = null;
+
+  function mount() {
+    var host = document.getElementById("widgets-wrap");
+    if (!host) return false;
+    if (mounted && document.getElementById(CLOCK_ID)) return true;
+
+    var node = buildClock();
+    // 插到最前面，让时钟出现在顶部左侧首位
+    host.insertBefore(node, host.firstChild);
+    mounted = node;
+    tick(node);
+    if (timer) clearInterval(timer);
+    timer = setInterval(function () {
+      if (mounted && document.body.contains(mounted)) {
+        tick(mounted);
+      } else {
+        clearInterval(timer);
+        timer = null;
+        mounted = null;
+      }
+    }, 1000);
+    return true;
+  }
+
+  function init() {
+    // 先尝试直接挂载
+    mount();
+
+    // 持续守护：水合未完成时等 #widgets-wrap 出现；
+    // 已挂载后若 React 重渲染把时钟冲掉，则重新插入。
+    var obs = new MutationObserver(function () {
+      mount();
+    });
+    obs.observe(document.documentElement, { childList: true, subtree: true });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();
+
+/**
+ * 农历注入 —— 在日历每个日期格子的公历数字下方加上中文农历日。
+ * 仅在 li.service[data-name="Calendar"] 内生效；翻月时自动重新注入。
+ */
+(function () {
+  "use strict";
+
+  // 1900-2099 农历数据：每年一个整数，位编码该年农历月大小 + 闰月
+  // 数据来自公开的农历算法（寿星天文历精简表）
+  var LUNAR_INFO = [
+    0x04bd8, 0x04ae0, 0x0a570, 0x054d5, 0x0d260, 0x0d950, 0x16554, 0x056a0, 0x09ad0, 0x055d2, //1900-1909
+    0x04ae0, 0x0a5b6, 0x0a4d0, 0x0d250, 0x1d255, 0x0b540, 0x0d6a0, 0x0ada2, 0x095b0, 0x14977, //1910-1919
+    0x04970, 0x0a4b0, 0x0b4b5, 0x06a50, 0x06d40, 0x1ab54, 0x02b60, 0x09570, 0x052f2, 0x04970, //1920-1929
+    0x06566, 0x0d4a0, 0x0ea50, 0x06e95, 0x05ad0, 0x02b60, 0x186e3, 0x092e0, 0x1c8d7, 0x0c950, //1930-1939
+    0x0d4a0, 0x1d8a6, 0x0b550, 0x056a0, 0x1a5b4, 0x025d0, 0x092d0, 0x0d2b2, 0x0a950, 0x0b557, //1940-1949
+    0x06ca0, 0x0b550, 0x15355, 0x04da0, 0x0a5b0, 0x14573, 0x052b0, 0x0a9a8, 0x0e950, 0x06aa0, //1950-1959
+    0x0aea6, 0x0ab50, 0x04b60, 0x0aae4, 0x0a570, 0x05260, 0x0f263, 0x0d950, 0x05b57, 0x056a0, //1960-1969
+    0x096d0, 0x04dd5, 0x04ad0, 0x0a4d0, 0x0d4d4, 0x0d250, 0x0d558, 0x0b540, 0x0b6a0, 0x195a6, //1970-1979
+    0x095b0, 0x049b0, 0x0a974, 0x0a4b0, 0x0b27a, 0x06a50, 0x06d40, 0x0af46, 0x0ab60, 0x09570, //1980-1989
+    0x04af5, 0x04970, 0x064b0, 0x074a3, 0x0ea50, 0x06b58, 0x055c0, 0x0ab60, 0x096d5, 0x092e0, //1990-1999
+    0x0c960, 0x0d954, 0x0d4a0, 0x0da50, 0x07552, 0x056a0, 0x0abb7, 0x025d0, 0x092d0, 0x0cab5, //2000-2009
+    0x0a950, 0x0b4a0, 0x0baa4, 0x0ad50, 0x055d9, 0x04ba0, 0x0a5b0, 0x15176, 0x052b0, 0x0a930, //2010-2019
+    0x07954, 0x06aa0, 0x0ad50, 0x05b52, 0x04b60, 0x0a6e6, 0x0a4e0, 0x0d260, 0x0ea65, 0x0d530, //2020-2029
+    0x05aa0, 0x076a3, 0x096d0, 0x04afb, 0x04ad0, 0x0a4d0, 0x1d0b6, 0x0d250, 0x0d520, 0x0dd45, //2030-2039
+    0x0b5a0, 0x056d0, 0x055b2, 0x049b0, 0x0a577, 0x0a4b0, 0x0aa50, 0x1b255, 0x06d20, 0x0ada0, //2040-2049
+    0x14b63, 0x09370, 0x049f8, 0x04970, 0x064b0, 0x168a6, 0x0ea50, 0x06b20, 0x1a6c4, 0x0aae0, //2050-2059
+    0x0a2e0, 0x0d2e3, 0x0c960, 0x0d557, 0x0d4a0, 0x0da50, 0x05d55, 0x056a0, 0x0a6d0, 0x055d4, //2060-2069
+    0x052d0, 0x0a9b8, 0x0a950, 0x0b4a0, 0x0b6a6, 0x0ad50, 0x055a0, 0x0aba4, 0x0a5b0, 0x052b0, //2070-2079
+    0x0b273, 0x06930, 0x07337, 0x06aa0, 0x0ad50, 0x14b55, 0x04b60, 0x0a570, 0x054e4, 0x0d160, //2080-2089
+    0x0e968, 0x0d520, 0x0daa0, 0x16aa6, 0x056d0, 0x04ae0, 0x0a9d4, 0x0a2d0, 0x0d150, 0x0f252, //2090-2099
+  ];
+
+  // 农历日名 / 月名（节气暂不计算，保持格子简洁）
+  function lunarYearDays(y) {
+    var sum = 348;
+    for (var i = 0x8000; i > 0x8; i >>= 1) {
+      sum += LUNAR_INFO[y - 1900] & i ? 1 : 0;
+    }
+    return sum + leapDays(y);
+  }
+  function leapMonth(y) {
+    return LUNAR_INFO[y - 1900] & 0xf;
+  }
+  function leapDays(y) {
+    if (leapMonth(y)) {
+      return LUNAR_INFO[y - 1900] & 0x10000 ? 30 : 29;
+    }
+    return 0;
+  }
+  function monthDays(y, m) {
+    return LUNAR_INFO[y - 1900] & (0x10000 >> m) ? 30 : 29;
+  }
+
+  // 公历 Date -> {year, month, day, isLeap} 农历
+  function solar2lunar(date) {
+    var baseDate = new Date(1900, 0, 31); // 1900-01-31 = 农历 1900 正月初一
+    var offset = Math.floor((date.getTime() - baseDate.getTime()) / 86400000);
+    var y, temp = 0;
+    for (y = 1900; y < 2100 && offset > 0; y++) {
+      temp = lunarYearDays(y);
+      offset -= temp;
+    }
+    if (offset < 0) {
+      offset += temp;
+      y--;
+    }
+    var leap = leapMonth(y);
+    var isLeap = false;
+    var m, d;
+    for (m = 1; m < 13 && offset > 0; m++) {
+      if (leap > 0 && m === leap + 1 && !isLeap) {
+        --m;
+        isLeap = true;
+        d = leapDays(y);
+      } else {
+        d = monthDays(y, m);
+      }
+      offset -= d;
+      if (isLeap && m === leap + 1) isLeap = false;
+    }
+    if (offset === 0 && leap > 0 && m === leap + 1) {
+      if (isLeap) {
+        isLeap = false;
+      } else {
+        isLeap = true;
+        --m;
+      }
+    }
+    if (offset < 0) {
+      offset += d;
+      --m;
+    }
+    return { year: y, month: m, day: offset + 1, isLeap: isLeap };
+  }
+
+  var LUNAR_DAY_NAME = [
+    "初一", "初二", "初三", "初四", "初五", "初六", "初七", "初八", "初九", "初十",
+    "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十",
+    "廿一", "廿二", "廿三", "廿四", "廿五", "廿六", "廿七", "廿八", "廿九", "三十",
+  ];
+  var LUNAR_MONTH_NAME = [
+    "正月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "冬月", "腊月",
+  ];
+
+  // 给一个公历 Date，返回要显示的农历标签（初一日显示月名，其余显示日名）
+  function lunarLabel(date) {
+    var l = solar2lunar(date);
+    if (l.day === 1) {
+      return (l.isLeap ? "闰" : "") + LUNAR_MONTH_NAME[l.month - 1];
+    }
+    return LUNAR_DAY_NAME[l.day - 1];
+  }
+
+  // 英文月份名 -> 月号
+  var MONTHS_EN = {
+    january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
+    july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+  };
+
+  // 从月份标题按钮解析当前年月，返回 {year, month} 或 null
+  function parseHeader(li) {
+    var btn = li.querySelector(".w-full.text-center > .flex-col > span:nth-child(2) button");
+    if (!btn) return null;
+    var txt = (btn.textContent || "").trim();
+    // 形如 "August 2026" / "8月 2026" / "2026年 8月"
+    var m = txt.match(/([A-Za-z]+)\s+(\d{4})/);
+    if (m) {
+      var mon = MONTHS_EN[m[1].toLowerCase()];
+      if (mon) return { year: parseInt(m[2], 10), month: mon };
+    }
+    m = txt.match(/(\d{4})[年\-\/.](\d{1,2})/);
+    if (m) return { year: parseInt(m[1], 10), month: parseInt(m[2], 10) };
+    m = txt.match(/(\d{1,2})\s*月?\s*(\d{4})/);
+    if (m) return { year: parseInt(m[2], 10), month: parseInt(m[1], 10) };
+    return null;
+  }
+
+  // 给日历注入农历
+  function injectLunar() {
+    var li = document.querySelector('li.service[data-name="Calendar"]');
+    if (!li) return;
+    var grid = li.querySelector(
+      ".pl-1.pr-1.pb-1.w-full .flex.justify-between.flex-wrap.pb-1"
+    );
+    if (!grid) return;
+    var header = parseHeader(li);
+    if (!header) return;
+
+    var buttons = grid.querySelectorAll("button");
+    // 若网格里已有农历标记，说明本次渲染已处理过，整体跳过（避免部分注入导致错位）
+    if (grid.querySelector(".ios-lunar")) return;
+    var days = []; // 按顺序收集每个 button 的公历日
+    for (var i = 0; i < buttons.length; i++) {
+      var b = buttons[i];
+      // button 的第一个文本节点是公历日
+      var dayText = "";
+      b.childNodes.forEach(function (n) {
+        if (!dayText && n.nodeType === 3) dayText = n.textContent.trim();
+      });
+      var day = parseInt(dayText, 10);
+      if (!day) continue;
+      days.push({ btn: b, day: day });
+    }
+    if (!days.length) return;
+
+    // 推算第一个格子的真实日期：日历可能从上月某天开始。
+    // 用 header 的年月构造一个“当月 day 号”，找到第一个属于当月的格子，
+    // 再向前推算非本月格子。但更简单：用每个 button 的 day 序列 + 是否非本月 class 反推。
+    // 这里采用：以当月 1 号为锚，找到 day==1 且非“非本月”的格子作为月初，其余按序号差推算。
+    var year = header.year;
+    var month = header.month; // 1-12
+
+    // 找到第一个“本月”格子的索引（无 text-gray-500 / text-red-500/40 类）
+    var firstInMonthIdx = -1;
+    for (var j = 0; j < days.length; j++) {
+      var cls = days[j].btn.className;
+      var isOther = /text-gray-500/.test(cls) || /text-red-500\/40/.test(cls);
+      if (!isOther) {
+        firstInMonthIdx = j;
+        break;
+      }
+    }
+    // 兜底：若没靠 class 找到，退而找 day===1 的格子作为月初
+    if (firstInMonthIdx < 0) {
+      for (var j2 = 0; j2 < days.length; j2++) {
+        if (days[j2].day === 1) {
+          firstInMonthIdx = j2;
+          break;
+        }
+      }
+    }
+    if (firstInMonthIdx < 0) return; // 仍找不到，放弃本次注入
+
+    for (var k = 0; k < days.length; k++) {
+      var info = days[k];
+      var offset = k - firstInMonthIdx; // 相对本月初的偏移天数
+      var date = new Date(year, month - 1, 1 + offset);
+      var label = lunarLabel(date);
+      var span = document.createElement("span");
+      span.className = "ios-lunar";
+      span.textContent = label;
+      // 插在公历数字之后、事件点 span 之前
+      info.btn.appendChild(span);
+    }
+  }
+
+  function initLunar() {
+    injectLunar();
+    // 翻月/重渲染时重新注入
+    var obs = new MutationObserver(function () {
+      injectLunar();
+    });
+    var li = document.querySelector('li.service[data-name="Calendar"]');
+    if (li) {
+      obs.observe(li, { childList: true, subtree: true });
+    } else {
+      // 日历还没渲染，先观察整个文档等它出现
+      var wait = new MutationObserver(function () {
+        var li2 = document.querySelector('li.service[data-name="Calendar"]');
+        if (li2) {
+          wait.disconnect();
+          injectLunar();
+          obs.observe(li2, { childList: true, subtree: true });
+        }
+      });
+      wait.observe(document.documentElement, { childList: true, subtree: true });
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initLunar);
+  } else {
+    initLunar();
+  }
+})();

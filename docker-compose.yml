@@ -13,3 +13,21 @@ services:
     environment:
       HOMEPAGE_ALLOWED_HOSTS: localhost:3001,127.0.0.1:3001,103.79.186.22:3001
     restart: unless-stopped
+    depends_on:
+      - glances
+
+  # 系统监控数据源：为 Homepage 的 glances widget 提供 REST API
+  # 同机部署，Homepage 通过 http://glances:61208 访问
+  # pid: host 让 glances 采集宿主机的真实 CPU/网卡/内存数据
+  glances:
+    image: nicolargo/glances:latest
+    container_name: glances
+    pid: host
+    ports:
+      - "61208:61208"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      # 开 Web API 模式（-w），监听 61208；不开认证
+      GLANCES_OPT: "-w"
+    restart: unless-stopped

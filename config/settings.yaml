@@ -20,3 +20,11 @@ background:
   saturate: 50 # 0, 50, 100... see https://tailwindcss.com/docs/backdrop-saturate
   brightness: 50 # 0, 50, 75... see https://tailwindcss.com/docs/backdrop-brightness
   opacity: 50 # 0-100
+
+layout:
+  日历:
+  预留1:
+  预留2:
+  系统监控:
+
+maxGroupColumns: 4

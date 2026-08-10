@@ -1,0 +1,238 @@
+/*
+ * Homepage custom.css — iOS/macOS 简洁风格
+ * 1. 顶部时钟（#ios-clock，由 custom.js 注入）
+ * 2. 日历 widget（calendar monthly，通过 li.service[data-name="Calendar"] 定位）
+ *
+ * 设计语言：苹果系统字体、轻字重、克制留白、iOS 蓝高亮。
+ */
+
+/* ============ 公共：苹果系统字体栈 + 色板 ============ */
+:root {
+  --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+    "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+  --ios-blue: #007aff;
+  --ios-red: #ff3b30;
+  --ios-label: rgba(0, 0, 0, 0.88);
+  --ios-secondary: rgba(0, 0, 0, 0.5);
+  --ios-separator: rgba(0, 0, 0, 0.08);
+}
+.dark {
+  --ios-label: rgba(255, 255, 255, 0.92);
+  --ios-secondary: rgba(235, 235, 245, 0.6);
+  --ios-separator: rgba(255, 255, 255, 0.12);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --ios-label: rgba(255, 255, 255, 0.92);
+    --ios-secondary: rgba(235, 235, 245, 0.6);
+    --ios-separator: rgba(255, 255, 255, 0.12);
+  }
+}
+
+/* ============ 1. 时钟 ============ */
+#ios-clock.ios-clock {
+  font-family: var(--ios-font);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-self: center;
+  margin-right: 1rem;
+  padding: 0.35rem 0.9rem;
+  line-height: 1.1;
+  -webkit-font-smoothing: antialiased;
+  text-align: left;
+}
+.ios-clock-time {
+  display: flex;
+  align-items: baseline;
+  color: var(--ios-label);
+  font-variant-numeric: tabular-nums; /* 等宽数字，跳秒不抖动 */
+  font-feature-settings: "tnum";
+}
+.ios-clock-hm {
+  font-size: 1.6rem;
+  font-weight: 200;
+  letter-spacing: 0.01em;
+}
+.ios-clock-s {
+  font-size: 1rem;
+  font-weight: 200;
+  color: var(--ios-secondary);
+}
+.ios-clock-date {
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--ios-secondary);
+  letter-spacing: 0.02em;
+}
+
+/* ============ 2. 日历 ============ */
+/*
+ * DOM（来自 widgets/calendar/monthly.jsx + components/services/item.jsx）：
+ *   li.service[data-name="Calendar"]
+ *     div.service-card
+ *       div.service-title          ← "Calendar" 标题行
+ *       ErrorBoundary > Calendar
+ *         div.flex.flex-col.w-full
+ *           div.sticky.top-0       ← integrations（空）
+ *           div.w-full.text-center ← Monthly 根
+ *             div.flex-col                          ← 月份导航（< 月份 >）
+ *               span>button(pl-6 pr-6 …)            ← 上一月
+ *               span>button                          ← 月份标题
+ *               span>button(pl-6 pr-6 …)            ← 下一月
+ *             div.pl-1.pr-1.pb-1.w-full
+ *               div.flex.justify-between.flex-wrap            ← 星期表头
+ *                 span(relative w-10 …, width:14%)             ← Mon/Tue…
+ *               div.flex.justify-between.flex-wrap.pb-1        ← 日期网格
+ *                 button(h-9 + relative w-10 …, width:14%)     ← 每一天
+ *
+ * 日期单元格类名标记：
+ *   周末        → text-red-500（非本月则 text-red-500/40）
+ *   非本月工作日 → text-gray-500
+ *   选中日       → …bg-theme-100/20 dark:bg-white/10 rounded-md
+ *   今天         → …bg-theme-100/20 dark:bg-black/20 rounded-md
+ */
+
+/* 用 :has() 精确锁定日历所在的 service 卡片（data-name 兜底） */
+li.service[data-name="Calendar"],
+li.service:has(> .service-card .w-full.text-center .flex-col button[class*="pl-6"]) {
+  /* 卡片本身保持默认，仅给内部日历做样式 */
+}
+
+/* —— 日历根：字体 + 一点内边距（整体缩到 3/4） —— */
+li.service[data-name="Calendar"] .w-full.text-center {
+  font-family: var(--ios-font);
+  -webkit-font-smoothing: antialiased;
+  padding: 0.15rem 0.15rem 0.35rem;
+}
+
+/* —— 月份导航行：横向排布、两端对齐 —— */
+li.service[data-name="Calendar"] .w-full.text-center > .flex-col {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0.35rem 0.35rem;
+}
+
+/* 月份标题按钮 */
+li.service[data-name="Calendar"] .w-full.text-center > .flex-col > span:nth-child(2) button {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ios-label);
+  letter-spacing: 0.01em;
+  padding: 0.18rem 0.55rem;
+  border-radius: 0.4rem;
+  transition: background 0.15s ease;
+}
+li.service[data-name="Calendar"] .w-full.text-center > .flex-col > span:nth-child(2) button:hover {
+  background: var(--ios-separator);
+}
+
+/* 前/后翻月按钮：圆形、iOS 箭头感 */
+li.service[data-name="Calendar"] .w-full.text-center > .flex-col button[class*="pl-6"] {
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  color: var(--ios-secondary);
+  font-size: 0.72rem;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+li.service[data-name="Calendar"] .w-full.text-center > .flex-col button[class*="pl-6"]:hover {
+  background: var(--ios-separator);
+  color: var(--ios-label);
+}
+
+/* —— 星期表头 —— */
+li.service[data-name="Calendar"] .pl-1.pr-1.pb-1.w-full
+  .flex.justify-between.flex-wrap:not(.pb-1) > span {
+  font-size: 0.53rem;
+  font-weight: 500;
+  color: var(--ios-secondary);
+  padding: 0.3rem 0;
+}
+
+/* —— 日期单元格基础（缩到 3/4，并为农历预留空间） —— */
+li.service[data-name="Calendar"] .pl-1.pr-1.pb-1.w-full
+  .flex.justify-between.flex-wrap.pb-1 > button {
+  height: 1.85rem;
+  font-size: 0.62rem;
+  font-weight: 400;
+  color: var(--ios-label);
+  border-radius: 0.45rem;
+  transition: background 0.12s ease;
+  overflow: hidden;
+}
+
+/* 农历小字（由 custom.js 注入的 .ios-lunar） */
+li.service[data-name="Calendar"] .pl-1.pr-1.pb-1.w-full
+  .flex.justify-between.flex-wrap.pb-1 > button .ios-lunar {
+  font-size: 0.48rem;
+  font-weight: 400;
+  line-height: 1;
+  margin-top: 1px;
+  opacity: 0.62;
+}
+/* 今天的农历保持高对比（今天底色是蓝，白字） */
+li.service[data-name="Calendar"] .pl-1.pr-1.pb-1.w-full
+  .flex.justify-between.flex-wrap.pb-1 > button[class*="dark:bg-black/20"] .ios-lunar {
+  opacity: 0.9;
+}
+
+/* 周末：克制的 iOS 红 */
+li.service[data-name="Calendar"] .pl-1.pr-1.pb-1.w-full
+  .flex.justify-between.flex-wrap.pb-1 > button.text-red-500 {
+  color: var(--ios-red);
+  opacity: 0.85;
+}
+/* 非本月周末 */
+li.service[data-name="Calendar"] .pl-1.pr-1.pb-1.w-full
+  .flex.justify-between.flex-wrap.pb-1 > button[class*="text-red-500/40"] {
+  color: var(--ios-red);
+  opacity: 0.35;
+}
+/* 非本月工作日 */
+li.service[data-name="Calendar"] .pl-1.pr-1.pb-1.w-full
+  .flex.justify-between.flex-wrap.pb-1 > button.text-gray-500 {
+  color: var(--ios-secondary);
+  opacity: 0.45;
+}
+
+/* 今天：iOS 蓝实心 + 白字（今天带 dark:bg-black/20） */
+li.service[data-name="Calendar"] .pl-1.pr-1.pb-1.w-full
+  .flex.justify-between.flex-wrap.pb-1 > button[class*="dark:bg-black/20"] {
+  background: var(--ios-blue) !important;
+  color: #fff !important;
+  font-weight: 600;
+  opacity: 1;
+}
+/* 选中日（带 dark:bg-white/10 但非今天） */
+li.service[data-name="Calendar"] .pl-1.pr-1.pb-1.w-full
+  .flex.justify-between.flex-wrap.pb-1
+  > button[class*="dark:bg-white/10"]:not([class*="dark:bg-black/20"]) {
+  background: var(--ios-separator) !important;
+  color: var(--ios-label);
+  opacity: 1;
+}
+/* 悬停 */
+li.service[data-name="Calendar"] .pl-1.pr-1.pb-1.w-full
+  .flex.justify-between.flex-wrap.pb-1
+  > button:hover:not([class*="dark:bg-black/20"]):not([class*="dark:bg-white/10"]) {
+  background: var(--ios-separator);
+}
+
+/* ============ 3. 四栏等宽布局 ============ */
+/*
+ * 默认：lg:basis-1/3 → xl:basis-1/4
+ * 4 个 group 在 xl+ 断点保持 1/4 宽度
+ */
+@media (min-width: 80rem) {
+  .services-group.flex-1 {
+    flex-basis: 25% !important;
+  }
+}

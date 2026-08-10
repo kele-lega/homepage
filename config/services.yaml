@@ -2,17 +2,50 @@
 # For configuration options and examples, please see:
 # https://gethomepage.dev/configs/services/
 
-- My First Group:
-    - My First Service:
-        href: http://localhost/
-        description: Homepage is awesome
+- 日历:
+    - Calendar:
+        widget:
+          type: calendar
+          view: monthly
+          firstDayInWeek: monday
+          timezone: Asia/Shanghai
 
-- My Second Group:
-    - My Second Service:
-        href: http://localhost/
-        description: Homepage is the best
+- 预留1:
+    - Placeholder:
+        href: "#"
+        description: 待配置
 
-- My Third Group:
-    - My Third Service:
-        href: http://localhost/
-        description: Homepage is 😎
+- 预留2:
+    - Placeholder:
+        href: "#"
+        description: 待配置
+
+- 系统监控:
+    - CPU 使用率:
+        widget:
+          type: glances
+          url: http://glances:61208
+          version: 4
+          metric: cpu
+          chart: true
+    - 网卡流量:
+        widget:
+          type: glances
+          url: http://glances:61208
+          version: 4
+          metric: network:eth0
+          chart: true
+    - 内存使用率:
+        widget:
+          type: glances
+          url: http://glances:61208
+          version: 4
+          metric: memory
+          chart: true
+    - 磁盘 IO:
+        widget:
+          type: glances
+          url: http://glances:61208
+          version: 4
+          metric: disk:sda
+          chart: true
