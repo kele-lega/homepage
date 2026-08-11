@@ -47,5 +47,5 @@
           type: glances
           url: http://glances:61208
           version: 4
-          metric: disk:sda
+          metric: disk:vda
           chart: true
