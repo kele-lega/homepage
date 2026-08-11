@@ -16,6 +16,11 @@
         href: "https://www.bilibili.com"
         description: 哔哩哔哩 - ( ゜- ゜)つロ 乾杯~
         ping: bilibili.com
+    - GitHub:
+        icon: /images/app/github-light.svg
+        href: "https://github.com"
+        description: Where the world builds software
+        ping: github.com
     
 
 - 丙:

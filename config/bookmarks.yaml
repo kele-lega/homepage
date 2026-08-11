@@ -2,17 +2,48 @@
 # For configuration options and examples, please see:
 # https://gethomepage.dev/configs/bookmarks
 
-- Developer:
-    - Github:
-        - abbr: GH
-          href: https://github.com/
+- Tools:
+    - 百度翻译:
+        - icon: /images/bookmarks/google-translate.svg
+          abbr: 百度翻译
+          href: https://fanyi.baidu.com/mtpe-individual/transText?aldtype=16047&ext_channel=Aldtype#/auto/zh
+    - 微信传输助手:
+        - icon: /images/bookmarks/wechat.svg
+          abbr: 微信传输助手
+          href: https://filehelper.weixin.qq.com/
+    - 文本比对助手:
+        - icon: https://a.favicon.im/jyshare.com?larger=true
+          abbr: 文本比对助手
+          href: https://www.jyshare.com/front-end/8006/
+    - 食用手册:
+        - icon: /images/bookmarks/cook.svg
+          abbr: 食用手册
+          href: https://cook.yunyoujun.cn/
 
-- Social:
-    - Reddit:
-        - abbr: RE
-          href: https://reddit.com/
+
+
+- AI:
+    - ChatGPT:
+        - icon: /images/bookmarks/chatgpt.svg
+          abbr: ChatGPT
+          href: https://sorryios.ai/pastel/#/carlist?from=inner
+    - TokenMP:
+        - icon: https://api.tokenmp.cn/favicon.ico
+          abbr: TokenMP
+          href: https://api.tokenmp.cn/panel
+
 
 - Entertainment:
-    - YouTube:
-        - abbr: YT
-          href: https://youtube.com/
+    - 以撒wiki:
+        - abbr: 以撒wiki
+          icon: https://a.favicon.im/isaac.huijiwiki.com?larger=true
+          href: https://isaac.huijiwiki.com/wiki/
+
+- Others:
+    - 云服务:
+        - icon: /images/bookmarks/google-cloud.svg
+          abbr: 云服务
+          href: https://www.ykvps.com/service?groupid=305
+
+
+
