@@ -2,7 +2,7 @@
 # For configuration options and examples, please see:
 # https://gethomepage.dev/configs/services/
 
-- 日历:
+- 甲:
     - Calendar:
         widget:
           type: calendar
@@ -10,12 +10,15 @@
           firstDayInWeek: monday
           timezone: Asia/Shanghai
 
-- 预留1:
-    - Placeholder:
-        href: "#"
-        description: 待配置
+- 乙:
+    - BiliBili:
+        icon: /images/app/bilibili.svg
+        href: "https://www.bilibili.com"
+        description: 哔哩哔哩 - ( ゜- ゜)つロ 乾杯~
+        ping: bilibili.com
+    
 
-- 预留2:
+- 丙:
     - Docker 容器:
         icon: mdi-docker
         widget:
@@ -25,32 +28,32 @@
           metric: containers
           chart: true
 
-- 系统监控:
+- 丁:
     - CPU 使用率:
         widget:
           type: glances
           url: http://glances:61208
           version: 4
           metric: cpu
-          chart: true
-    - 网卡流量:
-        widget:
-          type: glances
-          url: http://glances:61208
-          version: 4
-          metric: network:eth0
-          chart: true
+          chart: false
     - 内存使用率:
         widget:
           type: glances
           url: http://glances:61208
           version: 4
           metric: memory
-          chart: true
-    - 磁盘 IO:
+          chart: false
+    - 网络流量:
         widget:
           type: glances
           url: http://glances:61208
           version: 4
-          metric: disk:vda
-          chart: true
+          metric: network:eth0
+          chart: false
+    - 磁盘使用率:
+        widget:
+          type: glances
+          url: http://glances:61208
+          version: 4
+          metric: fs:/
+          chart: false

@@ -22,10 +22,10 @@ background:
   opacity: 50 # 0-100
 
 layout:
-  日历:
-  预留1:
-  预留2:
-  系统监控:
+  甲:
+  乙:
+  丙:
+  丁:
 
 maxGroupColumns: 4
 
