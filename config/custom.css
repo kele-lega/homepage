@@ -236,3 +236,19 @@ li.service[data-name="Calendar"] .pl-1.pr-1.pb-1.w-full
     flex-basis: 25% !important;
   }
 }
+
+/* ============ 4. Docker 容器列表：缩小状态圆点 ============ */
+/*
+ * glances containers widget 渲染的每个容器行首有一个状态圆点
+ * 原始尺寸 w-3 h-3（12px），缩小到 6px，并收紧右边距
+ */
+li.service .w-3.h-3.opacity-50 {
+  width: 0.375rem !important;
+  height: 0.375rem !important;
+  margin-right: 0.3rem !important;
+}
+/* 圆点内的 svg 跟着缩小 */
+li.service .w-3.h-3.opacity-50 svg {
+  width: 100% !important;
+  height: 100% !important;
+}

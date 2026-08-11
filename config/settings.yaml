@@ -28,3 +28,5 @@ layout:
   系统监控:
 
 maxGroupColumns: 4
+
+showStats: true

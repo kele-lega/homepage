@@ -16,9 +16,14 @@
         description: 待配置
 
 - 预留2:
-    - Placeholder:
-        href: "#"
-        description: 待配置
+    - Docker 容器:
+        icon: mdi-docker
+        widget:
+          type: glances
+          url: http://glances:61208
+          version: 4
+          metric: containers
+          chart: true
 
 - 系统监控:
     - CPU 使用率:
