@@ -35,11 +35,17 @@ services:
 
   # iCal 中转代理：解决 Homepage Node fetch 默认 UA 被 Google 当 bot 拒绝的问题
   # Google 直接拉返回 HTML 404 错误页（JSON 解析失败），本服务带 Mozilla UA 中转
+  # URL 通过环境变量注入，不在源码里硬编码私有 token
   ical-proxy:
     image: python:3.12-alpine
     container_name: ical-proxy
     working_dir: /app
     volumes:
       - ./ical-proxy:/app:ro
+    environment:
+      # 在本机或自己创建 .env 文件设置：
+      #   ICAL_UPSTREAM=https://calendar.google.com/calendar/ical/.../basic.ics
+      # 私密 token 不要直接写在这里，会进 git history。
+      - ICAL_UPSTREAM=${ICAL_UPSTREAM:-https://calendar.google.com/calendar/ical/REPLACE_ME/public/basic.ics}
     command: ["python", "-u", "ical-proxy.py"]
     restart: unless-stopped

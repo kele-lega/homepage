@@ -6,17 +6,18 @@ iCal 中转代理
 - 过滤掉 RRULE 行：iCal 重复事件会被 agenda 视图展开成多行
   （例: 每30 天循环 → 9/9、10/9、11/8 全列出），实际我们只想看下一次
 - 路径: /basic.ics 返回处理后的 iCal 文本
-- 缓存: 5 分钟
+- 缓存: 2 分钟
+- UPSTREAM 通过环境变量 ICAL_UPSTREAM 注入，不在源码里硬编码 token
 """
+import os
 import re
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import urlopen, Request
 
-UPSTREAM = (
-    "https://calendar.google.com/calendar/ical/"
-    "67916e172ac07375e55997c2264a72b5c863faa57d2d0c59e3182bc7a0dc4c6e"
-    "%40group.calendar.google.com/private-13e526a4873db48c38fa005433dc1cd8/basic.ics"
+UPSTREAM = os.environ.get(
+    "ICAL_UPSTREAM",
+    "https://calendar.google.com/calendar/ical/REPLACE_ME/public/basic.ics",
 )
 CACHE: tuple = ("", 0.0)
 CACHE_TTL = 120

@@ -1,0 +1,6 @@
+# 环境变量：包含敏感 token，不要入库
+.env
+.env.local
+
+# Homepage 运行时日志（每次访问页面都会变）
+config/logs/
