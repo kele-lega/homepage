@@ -32,3 +32,14 @@ services:
       # 开 Web API 模式（-w），监听 61208；不开认证
       GLANCES_OPT: "-w"
     restart: unless-stopped
+
+  # iCal 中转代理：解决 Homepage Node fetch 默认 UA 被 Google 当 bot 拒绝的问题
+  # Google 直接拉返回 HTML 404 错误页（JSON 解析失败），本服务带 Mozilla UA 中转
+  ical-proxy:
+    image: python:3.12-alpine
+    container_name: ical-proxy
+    working_dir: /app
+    volumes:
+      - ./ical-proxy:/app:ro
+    command: ["python", "-u", "ical-proxy.py"]
+    restart: unless-stopped

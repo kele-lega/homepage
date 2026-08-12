@@ -44,6 +44,10 @@
         - icon: /images/bookmarks/google-cloud.svg
           abbr: 云服务
           href: https://www.ykvps.com/service?groupid=305
+    - Google 日历:
+        - icon: /images/bookmarks/google-calendar.svg
+          abbr: Google 日历
+          href: https://calendar.google.com/calendar
 
 
 

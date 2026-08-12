@@ -9,6 +9,22 @@
           view: monthly
           firstDayInWeek: monday
           timezone: Asia/Shanghai
+          integrations:
+            - type: ical
+              url: http://ical-proxy:8089/basic.ics
+              name: 订阅到期
+              color: red
+    - Deadline:
+        widget:
+          type: calendar
+          view: agenda
+          maxEvents: 20
+          showTime: false
+          integrations:
+            - type: ical
+              url: http://ical-proxy:8089/basic.ics
+              name: Deadline
+              color: red
 
 - 乙:
     - BiliBili:
