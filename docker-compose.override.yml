@@ -1,0 +1,20 @@
+# 本地开发覆盖文件
+# 用法：在本地直接 `docker compose up -d` 即可生效
+# 原理：docker compose 自动合并 docker-compose.yml + docker-compose.override.yml
+#
+# 效果：
+#   - homepage 恢复 3000:3000 端口映射，浏览器直接访问 http://localhost:3000
+#   - caddy 不启动（本地不需要 HTTPS/认证）
+#   - 其余服务不变
+#
+# 生产环境部署时：
+#   docker compose -f docker-compose.yml up -d   # 指定只用主文件，忽略 override
+
+services:
+  homepage:
+    ports:
+      - "3000:3000"
+
+  caddy:
+    profiles:
+      - production

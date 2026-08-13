@@ -4,15 +4,16 @@ services:
     container_name: homepage
     entrypoint: ["/custom-entrypoint.sh"]
     command: ["node", "server.js"]
-    ports:
-      - "3001:3000"
+    # 不暴露外网端口，仅在内网被 caddy 反代
+    expose:
+      - "3000"
     volumes:
       - ./config:/app/config
       - ./public:/app/public
       - ./entrypoint.sh:/custom-entrypoint.sh:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
-      HOMEPAGE_ALLOWED_HOSTS: localhost:3001,127.0.0.1:3001,103.79.186.22:3001
+      HOMEPAGE_ALLOWED_HOSTS: localhost,127.0.0.1,103.79.186.22,kelelega.dpdns.org
     restart: unless-stopped
     depends_on:
       - glances
@@ -40,12 +41,34 @@ services:
     image: python:3.12-alpine
     container_name: ical-proxy
     working_dir: /app
+    expose:
+      - "8089"
     volumes:
       - ./ical-proxy:/app:ro
     environment:
-      # 在本机或自己创建 .env 文件设置：
-      #   ICAL_UPSTREAM=https://calendar.google.com/calendar/ical/.../basic.ics
-      # 私密 token 不要直接写在这里，会进 git history。
       - ICAL_UPSTREAM=${ICAL_UPSTREAM:-https://calendar.google.com/calendar/ical/REPLACE_ME/public/basic.ics}
     command: ["python", "-u", "ical-proxy.py"]
     restart: unless-stopped
+
+  # Caddy 反向代理：自动 HTTPS + HTTP Basic Auth
+  # 80/443 对外，内部反代到 homepage:3000
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      - AUTH_USER=${AUTH_USER:-admin}
+      - AUTH_HASH=${AUTH_HASH}
+    restart: unless-stopped
+    depends_on:
+      - homepage
+
+volumes:
+  caddy_data:
+  caddy_config:

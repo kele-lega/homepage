@@ -1,0 +1,9 @@
+kelelega.dpdns.org {
+	# HTTP Basic Auth，用户名/哈希从环境变量注入
+	basic_auth {
+		{$AUTH_USER} {$AUTH_HASH}
+	}
+
+	# 反代到 homepage 容器
+	reverse_proxy homepage:3000
+}
