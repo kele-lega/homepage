@@ -4,6 +4,7 @@
 #
 # 效果：
 #   - homepage 恢复 3000:3000 端口映射，浏览器直接访问 http://localhost:3000
+#   - glances 恢复 61208:61208 端口映射，直接访问 http://localhost:61208
 #   - caddy 不启动（本地不需要 HTTPS/认证）
 #   - 其余服务不变
 #
@@ -14,6 +15,10 @@ services:
   homepage:
     ports:
       - "3000:3000"
+
+  glances:
+    ports:
+      - "61208:61208"
 
   caddy:
     profiles:

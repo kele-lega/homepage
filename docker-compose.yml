@@ -25,8 +25,8 @@ services:
     image: nicolargo/glances:latest
     container_name: glances
     pid: host
-    ports:
-      - "61208:61208"
+    expose:
+      - "61208"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
