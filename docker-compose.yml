@@ -29,6 +29,8 @@ services:
       - "61208"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # 挂载宿主机根分区（只读），让 glances 能看到真实的磁盘使用率
+      - /:/host:ro
     environment:
       # 开 Web API 模式（-w），监听 61208；不开认证
       GLANCES_OPT: "-w"

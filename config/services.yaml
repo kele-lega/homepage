@@ -76,5 +76,5 @@
           type: glances
           url: http://glances:61208
           version: 4
-          metric: fs:/
+          metric: fs:/host
           chart: false
