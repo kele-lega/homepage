@@ -2,15 +2,6 @@
 # For configuration options and examples, please see:
 # https://gethomepage.dev/configs/info-widgets/
 
-- glances:
-    url: http://glances:61208
-    version: 4
-
-- resources:
-    cpu: true
-    memory: true
-    disk: /
-
 - openmeteo:
     label: 坪山
     latitude: 22.72
@@ -20,6 +11,7 @@
     cache: 5
 
 - search:
-    provider: duckduckgo
+    provider: [google, bing, duckduckgo, brave]
+    showSearchSuggestions: false
     target: _blank
 

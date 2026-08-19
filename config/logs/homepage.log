@@ -21,3 +21,79 @@
 [2026-08-07T03:02:39.002Z] info: widgets.yaml was copied to the config folder
 [2026-08-07T03:02:39.003Z] info: custom.css was copied to the config folder
 [2026-08-07T03:02:39.003Z] info: custom.js was copied to the config folder
+[2026-08-17T11:13:38.272Z] error: undefined
+[2026-08-17T11:14:17.902Z] error: undefined
+[2026-08-17T11:14:24.072Z] error: undefined
+[2026-08-17T11:15:28.345Z] error: undefined
+[2026-08-17T11:15:49.401Z] error: undefined
+[2026-08-17T11:18:26.693Z] error: undefined
+[2026-08-17T11:18:34.594Z] error: undefined
+[2026-08-17T11:19:06.337Z] warn: <resources> Drive not found for target: /host
+[2026-08-17T12:41:10.405Z] warn: <resources> Drive not found for target: /host
+[2026-08-17T13:18:55.273Z] error: <glances> Missing Glances URL
+[2026-08-17T13:20:50.381Z] error: undefined
+[2026-08-18T15:09:32.571Z] error: undefined
+[2026-08-18T15:09:34.809Z] error: undefined
+[2026-08-18T15:09:40.269Z] error: undefined
+[2026-08-18T15:09:43.034Z] error: undefined
+[2026-08-18T15:09:50.278Z] error: undefined
+[2026-08-18T20:31:15.567Z] error: <httpProxy> Error calling http://glances:61208/api/4/containers...
+[2026-08-18T20:31:15.608Z] error: <httpProxy> [
+  500,
+  Error: read ECONNRESET
+      at ignore-listed frames {
+    errno: -104,
+    code: 'ECONNRESET',
+    syscall: 'read'
+  }
+]
+[2026-08-18T20:31:15.611Z] error: <credentialedProxyHandler> HTTP Error 500 calling http://glances:61208/api/4/containers
+[2026-08-19T02:25:22.580Z] error: <httpProxy> Error calling http://glances:61208/api/4/cpu...
+[2026-08-19T02:25:22.602Z] error: <httpProxy> [
+  500,
+  Error: socket hang up
+      at ignore-listed frames {
+    code: 'ECONNRESET'
+  }
+]
+[2026-08-19T02:25:22.604Z] error: <credentialedProxyHandler> HTTP Error 500 calling http://glances:61208/api/4/cpu
+[2026-08-19T02:28:58.365Z] error: <httpProxy> Error calling http://glances:61208/api/4/cpu...
+[2026-08-19T02:28:58.393Z] error: <httpProxy> [
+  500,
+  Error: read ECONNRESET
+      at ignore-listed frames {
+    errno: -104,
+    code: 'ECONNRESET',
+    syscall: 'read'
+  }
+]
+[2026-08-19T02:28:58.397Z] error: <credentialedProxyHandler> HTTP Error 500 calling http://glances:61208/api/4/cpu
+[2026-08-19T02:53:28.884Z] error: <httpProxy> Error calling http://glances:61208/api/4/fs...
+[2026-08-19T02:53:28.995Z] error: <httpProxy> [
+  500,
+  Error: read ECONNRESET
+      at ignore-listed frames {
+    errno: -104,
+    code: 'ECONNRESET',
+    syscall: 'read'
+  }
+]
+[2026-08-19T02:53:29.084Z] error: <credentialedProxyHandler> HTTP Error 500 calling http://glances:61208/api/4/fs
+[2026-08-19T02:54:53.898Z] error: <httpProxy> Error calling http://glances:61208/api/4/quicklook...
+[2026-08-19T02:54:54.085Z] error: <httpProxy> [
+  500,
+  Error: socket hang up
+      at ignore-listed frames {
+    code: 'ECONNRESET'
+  }
+]
+[2026-08-19T02:54:54.089Z] error: <credentialedProxyHandler> HTTP Error 500 calling http://glances:61208/api/4/quicklook
+[2026-08-19T03:01:30.293Z] error: <httpProxy> Error calling http://glances:61208/api/4/cpu...
+[2026-08-19T03:01:30.387Z] error: <httpProxy> [
+  500,
+  Error: socket hang up
+      at ignore-listed frames {
+    code: 'ECONNRESET'
+  }
+]
+[2026-08-19T03:01:30.389Z] error: <credentialedProxyHandler> HTTP Error 500 calling http://glances:61208/api/4/cpu

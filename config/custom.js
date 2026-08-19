@@ -1,4 +1,84 @@
 /**
+ * 外网搜索联想：通过 Homepage API 获取候选词，最多显示 10 条。
+ */
+(function () {
+  "use strict";
+
+  var SEARCH_SELECTOR = ".information-widget-search input";
+  var LIST_ID = "external-search-suggestions";
+  var timer = null;
+  var request = null;
+  var URLS = {
+    Google: "https://www.google.com/search?q=",
+    Bing: "https://www.bing.com/search?q=",
+    DuckDuckGo: "https://duckduckgo.com/?q=",
+    Brave: "https://search.brave.com/search?q=",
+  };
+
+  function providerName() {
+    var stored = localStorage.getItem("search-name");
+    return URLS[stored] ? stored : "Google";
+  }
+
+  function closeList() {
+    var list = document.getElementById(LIST_ID);
+    if (list) list.remove();
+  }
+
+  function renderList(input, values) {
+    closeList();
+    if (!input.value.trim() || !values.length) return;
+    var list = document.createElement("div");
+    list.id = LIST_ID;
+    list.className = "external-search-suggestions";
+    list.setAttribute("role", "listbox");
+    values.slice(0, 10).forEach(function (value) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "external-search-suggestion";
+      button.textContent = value;
+      button.setAttribute("role", "option");
+      button.addEventListener("mousedown", function (event) {
+        event.preventDefault();
+        window.open(URLS[providerName()] + encodeURIComponent(value), "_blank");
+        closeList();
+      });
+      list.appendChild(button);
+    });
+    var wrapper = input.closest(".information-widget-search");
+    if (wrapper) wrapper.appendChild(list);
+  }
+
+  function fetchSuggestions(input) {
+    var query = input.value.trim();
+    closeList();
+    if (!query) return;
+    if (request) request.abort();
+    request = new AbortController();
+    fetch("/api/search/searchSuggestion?query=" + encodeURIComponent(query) + "&providerName=" + providerName(), {
+      signal: request.signal,
+    })
+      .then(function (response) { return response.json(); })
+      .then(function (data) { if (data && Array.isArray(data[1])) renderList(input, data[1]); })
+      .catch(function () {});
+  }
+
+  function initSuggestions() {
+    var input = document.querySelector(SEARCH_SELECTOR);
+    if (!input || input.dataset.suggestionsReady) return;
+    input.dataset.suggestionsReady = "true";
+    input.addEventListener("input", function () {
+      clearTimeout(timer);
+      timer = setTimeout(function () { fetchSuggestions(input); }, 180);
+    });
+    input.addEventListener("blur", function () { setTimeout(closeList, 150); });
+  }
+
+  initSuggestions();
+  new MutationObserver(initSuggestions).observe(document.documentElement, { childList: true, subtree: true });
+})();
+
+/**
  * Homepage custom.js — iOS/macOS 风格时钟
  *
  * 在页面顶部 #widgets-wrap 左侧插入一个跟随 Asia/Shanghai 时区的数字时钟。
@@ -125,6 +205,104 @@
     document.addEventListener("DOMContentLoaded", init);
   } else {
     init();
+  }
+})();
+
+/**
+ * 站内搜索：筛选当前页面上的服务和书签，Enter 打开首个匹配项。
+ */
+(function () {
+  "use strict";
+
+  var SEARCH_ID = "homepage-local-search";
+  var ITEM_SELECTOR = "li.service, li.bookmark";
+
+  function normalize(value) {
+    return (value || "").toLocaleLowerCase("zh-CN").trim();
+  }
+
+  function searchableText(item) {
+    return normalize((item.dataset.name || "") + " " + (item.textContent || ""));
+  }
+
+  function filterItems(query) {
+    var keyword = normalize(query);
+    var items = document.querySelectorAll(ITEM_SELECTOR);
+    var firstMatch = null;
+
+    for (var i = 0; i < items.length; i++) {
+      var matches = !keyword || searchableText(items[i]).indexOf(keyword) !== -1;
+      items[i].classList.toggle("local-search-hidden", !matches);
+      if (matches && keyword && !firstMatch) firstMatch = items[i];
+    }
+
+    return firstMatch;
+  }
+
+  function buildSearch() {
+    var form = document.createElement("form");
+    form.id = SEARCH_ID;
+    form.className = "homepage-local-search information-widget-form";
+    form.setAttribute("role", "search");
+
+    var input = document.createElement("input");
+    input.type = "search";
+    input.placeholder = "搜索本站服务和书签…";
+    input.setAttribute("aria-label", "搜索本站服务和书签");
+    input.autocomplete = "off";
+
+    var clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "homepage-local-search-clear";
+    clear.textContent = "×";
+    clear.title = "清空站内搜索";
+    clear.setAttribute("aria-label", "清空站内搜索");
+
+    input.addEventListener("input", function () {
+      filterItems(input.value);
+      clear.hidden = !input.value;
+    });
+    clear.addEventListener("click", function () {
+      input.value = "";
+      clear.hidden = true;
+      filterItems("");
+      input.focus();
+    });
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var firstMatch = filterItems(input.value);
+      if (!firstMatch) return;
+      var link = firstMatch.querySelector("a[href]");
+      if (link) link.click();
+    });
+
+    clear.hidden = true;
+    form.appendChild(input);
+    form.appendChild(clear);
+    return form;
+  }
+
+  function mountSearch() {
+    var host = document.getElementById("widgets-wrap");
+    if (!host || document.getElementById(SEARCH_ID)) return;
+    var externalSearch = host.querySelector(".information-widget-search");
+    if (externalSearch && externalSearch.parentElement) {
+      externalSearch.parentElement.insertBefore(buildSearch(), externalSearch);
+    } else {
+      host.appendChild(buildSearch());
+    }
+  }
+
+  function initSearch() {
+    mountSearch();
+    var observer = new MutationObserver(mountSearch);
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initSearch);
+  } else {
+    initSearch();
   }
 })();
 
