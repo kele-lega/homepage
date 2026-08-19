@@ -4,6 +4,17 @@ kelelega.dpdns.org {
 		{$AUTH_USER} {$AUTH_HASH}
 	}
 
-	# 反代到 homepage 容器
-	reverse_proxy homepage:3000
+	# 基金监控 API：/fund-monitor/* -> fund-monitor:8090
+	# handle_path 会剥掉 /fund-monitor 前缀，服务收到的是 /api/funds、/healthz
+	# Basic Auth 在站点级别声明，这条路由同样受保护
+	handle_path /fund-monitor/* {
+		reverse_proxy fund-monitor:8090
+	}
+
+	# 其余全部反代到 homepage 容器
+	# 用 handle 包起来：handle 之间互斥，按书写顺序匹配，
+	# 不依赖 Caddy 隐式指令排序，避免裸 reverse_proxy 抢走 /fund-monitor
+	handle {
+		reverse_proxy homepage:3000
+	}
 }

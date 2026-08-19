@@ -20,6 +20,15 @@ services:
     ports:
       - "61208:61208"
 
+  # 本地没有 caddy 做同源反代，所以直接开端口 + 白名单放开本机来源
+  # homepage 本地端口可能是 3000 或 3001，两个都列上；生产走 /fund-monitor
+  # 同源路径，不需要 CORS，也不开这个端口
+  fund-monitor:
+    ports:
+      - "8090:8090"
+    environment:
+      - FUND_ALLOW_ORIGIN=http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001
+
   caddy:
     profiles:
       - production

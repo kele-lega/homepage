@@ -52,6 +52,23 @@ services:
     command: ["python", "-u", "ical-proxy.py"]
     restart: unless-stopped
 
+  # 基金净值监控：后台常驻抓取估算/正式净值，JSON 文件持久化
+  # 只在内网暴露，浏览器经 caddy 的 /fund-monitor/* 同源访问
+  fund-monitor:
+    build: ./fund-monitor
+    container_name: fund-monitor
+    expose:
+      - "8090"
+    volumes:
+      # 数据目录挂宿主机，容器重启后基金列表和缓存不丢
+      - ./fund-monitor/data:/app/data
+    environment:
+      - FUND_DATA_DIR=/app/data
+      - FUND_HOST=0.0.0.0
+      - FUND_PORT=8090
+      - FUND_REFRESH_SEC=${FUND_REFRESH_SEC:-60}
+    restart: unless-stopped
+
   # Caddy 反向代理：自动 HTTPS + HTTP Basic Auth
   # 80/443 对外，内部反代到 homepage:3000
   caddy:
@@ -70,6 +87,7 @@ services:
     restart: unless-stopped
     depends_on:
       - homepage
+      - fund-monitor
 
 volumes:
   caddy_data:

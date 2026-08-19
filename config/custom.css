@@ -354,3 +354,303 @@ li.service .w-3.h-3.opacity-50 svg {
   width: 100% !important;
   height: 100% !important;
 }
+
+/* ============ 5. 基金净值监控卡片（#ios-fund，由 custom.js 注入） ============ */
+/*
+ * 结构：head（标题 + 更新时间）/ warn（错误提示）/ list（每只基金一行）/ add（输入 + 添加）
+ * 涨绿跌红，用 A 股习惯；颜色在亮/暗色主题下都保证对比度。
+ */
+.ios-fund {
+  --fund-up: #34c759;
+  --fund-down: #ff3b30;
+  font-family: var(--ios-font);
+  /* 左右间距对齐甲乙丙丁分组的外边缘（实测为 1rem，sm 起 2rem），
+     比信息栏的 m-5/m-9 各窄 4px，这样竖直边线和分组卡片完全对齐 */
+  margin: 0.5rem 1rem 0;
+  /* box-sizing 保证 padding+border 不会把宽度顶出容器 */
+  box-sizing: border-box;
+  /* 宽度跟甲乙丙丁分组列严格对齐。分组容器 #services 是 m-4 sm:m-8（1rem/2rem），
+     分组列 = (容器宽 - 左右margin) × 1/2|1/3|1/4；CSS 百分比不扣自身 margin，
+     所以必须用 calc 减掉，否则会比分组列宽出一截（约 16-20px） */
+  width: auto;
+  max-width: none;
+  padding: 0.75rem 0.9rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--ios-separator);
+  backdrop-filter: blur(8px);
+}
+
+/* sm 断点起分组外边缘变成 2rem，卡片跟着走，保持左右对齐 */
+@media (min-width: 640px) {
+  .ios-fund {
+    margin: 0.5rem 2rem 0;
+  }
+}
+
+/* 宽度在各断点跟甲乙丙丁分组列保持一致：
+   分组列 = (父容器宽 - 左右margin) × 比例；卡片同样有 1rem/2rem 的 margin，
+   所以百分比要减去对应份额（50%→2rem、1/3→1.3333rem、25%→1rem，均为 sm 起 2rem margin 的一半/三分之一/四分之一） */
+@media (min-width: 768px) {
+  .ios-fund {
+    width: calc(50% - 2rem);
+    max-width: calc(50% - 2rem);
+  }
+}
+@media (min-width: 1024px) {
+  .ios-fund {
+    width: calc(33.3333% - 1.3333rem);
+    max-width: calc(33.3333% - 1.3333rem);
+  }
+}
+@media (min-width: 1280px) {
+  .ios-fund {
+    width: calc(25% - 1rem);
+    max-width: calc(25% - 1rem);
+  }
+}
+
+.ios-fund-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.ios-fund-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--ios-label);
+}
+
+.ios-fund-status,
+.ios-fund-date,
+.ios-fund-code {
+  font-size: 0.7rem;
+  color: var(--ios-secondary);
+}
+
+.ios-fund-head-right {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
+.ios-fund-detail {
+  font-size: 0.7rem;
+  color: var(--ios-blue);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.ios-fund-detail:hover {
+  text-decoration: underline;
+}
+
+/* 错误提示：克制的黄色条，不遮挡下方数据 */
+.ios-fund-warn {
+  font-size: 0.7rem;
+  line-height: 1.4;
+  color: #b25000;
+  background: rgba(255, 149, 0, 0.14);
+  border-radius: 0.4rem;
+  padding: 0.3rem 0.45rem;
+  margin-bottom: 0.4rem;
+}
+.dark .ios-fund-warn {
+  color: #ffb340;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) .ios-fund-warn {
+    color: #ffb340;
+  }
+}
+
+.ios-fund-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.ios-fund-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0;
+  border-top: 1px solid var(--ios-separator);
+}
+.ios-fund-row:first-child {
+  border-top: none;
+}
+
+/* 名称区可压缩，保证长基金名不把数字挤出去 */
+.ios-fund-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ios-fund-nameline {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+/* 长名称截断成省略号，不换行、不溢出 */
+.ios-fund-name {
+  font-size: 0.82rem;
+  color: var(--ios-label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ios-fund-code {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.ios-fund-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.1rem;
+}
+
+/* 估算 / 正式 / 待获取 标签 */
+.ios-fund-kind {
+  font-size: 0.62rem;
+  line-height: 1;
+  padding: 0.15rem 0.3rem;
+  border-radius: 0.25rem;
+  color: var(--ios-secondary);
+  background: rgba(120, 120, 128, 0.16);
+}
+.ios-fund-kind-estimate {
+  color: var(--ios-blue);
+  background: rgba(0, 122, 255, 0.14);
+}
+
+/* 净值 + 涨跌幅：等宽数字，右对齐，跨行不跳动 */
+.ios-fund-nums {
+  flex: 0 0 auto;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  min-width: 4.5rem;
+}
+
+.ios-fund-nav {
+  font-size: 0.85rem;
+  color: var(--ios-label);
+}
+
+.ios-fund-pct {
+  font-size: 0.72rem;
+  margin-top: 0.05rem;
+}
+
+/* 显示估算净值时，正式净值另起一行留对照，用中性色不抢眼 */
+.ios-fund-official {
+  font-size: 0.62rem;
+  color: var(--ios-secondary);
+  margin-top: 0.1rem;
+}
+
+.ios-fund-nums.up .ios-fund-nav,
+.ios-fund-nums.up .ios-fund-pct {
+  color: var(--fund-up);
+}
+.ios-fund-nums.down .ios-fund-nav,
+.ios-fund-nums.down .ios-fund-pct {
+  color: var(--fund-down);
+}
+.ios-fund-nums.flat .ios-fund-pct {
+  color: var(--ios-secondary);
+}
+
+/* 删除按钮：圆形、悬停才变红，避免视觉噪音 */
+.ios-fund-del {
+  flex: 0 0 auto;
+  width: 1.25rem;
+  height: 1.25rem;
+  line-height: 1;
+  font-size: 0.9rem;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--ios-secondary);
+  background: rgba(120, 120, 128, 0.14);
+}
+.ios-fund-del:hover:not(:disabled) {
+  color: #fff;
+  background: var(--ios-red);
+}
+.ios-fund-del:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.ios-fund-del:focus-visible,
+.ios-fund-input:focus-visible,
+.ios-fund-submit:focus-visible {
+  outline: 2px solid var(--ios-blue);
+  outline-offset: 1px;
+}
+
+.ios-fund-empty {
+  font-size: 0.75rem;
+  color: var(--ios-secondary);
+  padding: 0.5rem 0;
+}
+
+.ios-fund-add {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--ios-separator);
+}
+
+.ios-fund-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--ios-font);
+  font-size: 0.78rem;
+  padding: 0.3rem 0.5rem;
+  color: var(--ios-label);
+  background: rgba(120, 120, 128, 0.12);
+  border: 1px solid var(--ios-separator);
+  border-radius: 0.4rem;
+}
+.ios-fund-input::placeholder {
+  color: var(--ios-secondary);
+}
+
+.ios-fund-submit {
+  flex: 0 0 auto;
+  font-family: var(--ios-font);
+  font-size: 0.78rem;
+  padding: 0.3rem 0.7rem;
+  color: #fff;
+  background: var(--ios-blue);
+  border: none;
+  border-radius: 0.4rem;
+  cursor: pointer;
+}
+.ios-fund-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* 窄屏：数字列略收窄，标签换行也不溢出 */
+@media (max-width: 640px) {
+  .ios-fund {
+    padding: 0.6rem 0.7rem;
+  }
+  .ios-fund-nums {
+    min-width: 4rem;
+  }
+  .ios-fund-name {
+    font-size: 0.78rem;
+  }
+}
+

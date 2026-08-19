@@ -541,3 +541,364 @@
     initLunar();
   }
 })();
+
+/**
+ * Homepage custom.js — 基金净值监控卡片
+ *
+ * 数据来自 fund-monitor 服务（后台常驻抓取，页面关了也在跑）。
+ * 本卡片只展示净值和涨跌，不涉及金额、份额、盈亏。
+ * 盘中显示估算净值并标注「估算」，正式净值发布后自动切换为「正式」。
+ */
+(function () {
+  "use strict";
+
+  var CARD_ID = "ios-fund";
+  var POLL_MS = 30000; // 前端只是读缓存，间隔可以比后端抓取更短
+
+  // 后端地址在生产/本地不一样，而本地 homepage 端口还可能被改（3000/3001/…），
+  // 所以不靠端口号猜：依次探测候选地址，谁的 /healthz 通就用谁，结果缓存下来。
+  //   1. window.FUND_MONITOR_BASE —— 手动指定，优先级最高
+  //   2. /fund-monitor          —— 生产由 Caddy 同源反代
+  //   3. //<当前域名>:8090       —— 本地开发直连容器映射端口
+  var BASE_PORT = "8090";
+  var resolvedBase = null;
+  var probing = null;
+
+  function candidates() {
+    var list = [];
+    if (window.FUND_MONITOR_BASE) list.push(window.FUND_MONITOR_BASE);
+    list.push("/fund-monitor");
+    list.push(location.protocol + "//" + location.hostname + ":" + BASE_PORT);
+    return list;
+  }
+
+  // 基金详情站（real-time-fund）地址。本地默认同主机 3000 端口；
+  // 生产地址由 window.REAL_TIME_FUND_URL 指定（留空时仍退回 3000，云端部署时再补配置）
+  var REAL_TIME_FUND_PORT = "3000";
+  function realTimeFundBase() {
+    if (window.REAL_TIME_FUND_URL) return window.REAL_TIME_FUND_URL;
+    return location.protocol + "//" + location.hostname + ":" + REAL_TIME_FUND_PORT;
+  }
+
+  // 探测：/healthz 必须返回 JSON 且 ok=true。
+  // homepage 自己的 404 页面是 HTML，解析就失败，能被正确排除。
+  function probe(base) {
+    return fetch(base + "/healthz", { cache: "no-store" })
+      .then(function (resp) {
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        return resp.json();
+      })
+      .then(function (body) {
+        if (!body || body.ok !== true) throw new Error("非监控服务响应");
+        return base;
+      });
+  }
+
+  function resolveBase() {
+    if (resolvedBase) return Promise.resolve(resolvedBase);
+    if (probing) return probing;
+    var list = candidates();
+    probing = list
+      .reduce(function (chain, base) {
+        return chain.catch(function () { return probe(base); });
+      }, Promise.reject())
+      .then(function (base) {
+        resolvedBase = base;
+        probing = null;
+        return base;
+      })
+      .catch(function (err) {
+        probing = null;
+        throw new Error("找不到监控服务（已试 " + list.join("、") + "）");
+      });
+    return probing;
+  }
+
+  var state = { funds: [], lastRefresh: null, lastError: null, netError: null, loaded: false };
+  var draft = ""; // 输入框内容，React 重渲染冲掉卡片后不丢
+  var timer = null;
+  var mounted = null;
+
+  function api(path, options) {
+    return resolveBase().then(function (base) {
+      return fetch(base + path, options || {}).then(function (resp) {
+        return resp.json().then(
+          function (body) {
+            if (!resp.ok) throw new Error((body && body.error) || "HTTP " + resp.status);
+            return body;
+          },
+          function () {
+            // 响应不是 JSON：地址可能已失效（容器重启/端口变动），下次重新探测
+            if (!resp.ok) resolvedBase = null;
+            throw new Error("HTTP " + resp.status);
+          }
+        );
+      });
+    });
+  }
+
+  function fmtNav(value) {
+    return typeof value === "number" ? value.toFixed(4) : "--";
+  }
+
+  function fmtPct(value) {
+    if (typeof value !== "number") return "--";
+    return (value > 0 ? "+" : "") + value.toFixed(2) + "%";
+  }
+
+  // 涨绿跌红：跟随 A 股习惯，与 CSS 里的 .up/.down 对应
+  function trendClass(value) {
+    if (typeof value !== "number" || value === 0) return "flat";
+    return value > 0 ? "up" : "down";
+  }
+
+  function kindLabel(kind) {
+    if (kind === "estimate") return "估算";
+    if (kind === "official") return "正式";
+    return "待获取";
+  }
+
+  function shortTime(iso) {
+    if (!iso) return "--";
+    var m = /T(\d{2}:\d{2})/.exec(iso);
+    return m ? m[1] : iso;
+  }
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined && text !== null) node.textContent = text;
+    return node;
+  }
+
+  function buildRow(fund) {
+    var row = el("div", "ios-fund-row");
+
+    var main = el("div", "ios-fund-main");
+    var nameLine = el("div", "ios-fund-nameline");
+    nameLine.appendChild(el("span", "ios-fund-name", fund.name || "未知名称"));
+    nameLine.appendChild(el("span", "ios-fund-code", fund.code));
+    main.appendChild(nameLine);
+
+    var meta = el("div", "ios-fund-meta");
+    meta.appendChild(el("span", "ios-fund-kind ios-fund-kind-" + (fund.kind || "pending"),
+      kindLabel(fund.kind)));
+    meta.appendChild(el("span", "ios-fund-date", fund.nav_date || "--"));
+    main.appendChild(meta);
+    row.appendChild(main);
+
+    var trend = trendClass(fund.change_pct);
+    var nums = el("div", "ios-fund-nums " + trend);
+    nums.appendChild(el("div", "ios-fund-nav", fmtNav(fund.nav)));
+    nums.appendChild(el("div", "ios-fund-pct", fmtPct(fund.change_pct)));
+    // 当前显示的是估算净值时，正式净值另起一行留个对照，不然用户分不清哪个是官方数字
+    if (fund.kind === "estimate" && typeof fund.official_nav === "number") {
+      var officialText = "正式 " + fmtNav(fund.official_nav);
+      if (fund.official_date) officialText += " " + fund.official_date.slice(5);
+      nums.appendChild(el("div", "ios-fund-official", officialText));
+    }
+    row.appendChild(nums);
+
+    var del = el("button", "ios-fund-del", "×");
+    del.type = "button";
+    var label = "删除 " + (fund.name || fund.code);
+    del.setAttribute("aria-label", label);
+    del.title = label;
+    del.addEventListener("click", function () {
+      del.disabled = true;
+      api("/api/funds/" + fund.code, { method: "DELETE" })
+        .then(load)
+        .catch(function (err) {
+          del.disabled = false;
+          state.netError = "删除失败：" + err.message;
+          render();
+        });
+    });
+    row.appendChild(del);
+    return row;
+  }
+
+  function buildAddForm() {
+    var form = el("form", "ios-fund-add");
+
+    var input = el("input", "ios-fund-input");
+    input.type = "text";
+    input.inputMode = "numeric";
+    input.maxLength = 6;
+    input.placeholder = "6 位基金代码";
+    input.setAttribute("aria-label", "基金代码");
+    input.value = draft;
+    input.addEventListener("input", function () {
+      // 只留数字，避免提交明显非法的值
+      input.value = input.value.replace(/\D/g, "").slice(0, 6);
+      draft = input.value;
+    });
+
+    var submit = el("button", "ios-fund-submit", "添加");
+    submit.type = "submit";
+
+    form.appendChild(input);
+    form.appendChild(submit);
+
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var code = input.value.trim();
+      if (!/^\d{6}$/.test(code)) {
+        state.netError = "请输入 6 位基金代码";
+        render();
+        return;
+      }
+      submit.disabled = true;
+      api("/api/funds", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: code }),
+      })
+        .then(function () {
+          draft = "";
+          state.netError = null;
+          return load();
+        })
+        .catch(function (err) {
+          submit.disabled = false;
+          state.netError = "添加失败：" + err.message;
+          render();
+        });
+    });
+    return form;
+  }
+
+  function render() {
+    if (!mounted) return;
+    mounted.textContent = "";
+
+    var head = el("div", "ios-fund-head");
+    head.appendChild(el("span", "ios-fund-title", "基金净值"));
+
+    var right = el("span", "ios-fund-head-right");
+    var status = el("span", "ios-fund-status");
+    if (!state.loaded) {
+      status.textContent = "加载中…";
+    } else {
+      status.textContent = "更新 " + shortTime(state.lastRefresh);
+    }
+    right.appendChild(status);
+    // 跳转到独立的基金详情站；V1 只跳首页，不要求定位到具体某只基金
+    var detailLink = el("a", "ios-fund-detail", "详细查看 ›");
+    detailLink.href = realTimeFundBase();
+    detailLink.target = "_blank";
+    detailLink.rel = "noopener noreferrer";
+    right.appendChild(detailLink);
+    head.appendChild(right);
+    mounted.appendChild(head);
+
+    // 错误提示：保留下方缓存数据继续显示，不遮挡内容
+    var problem = state.netError || state.lastError;
+    if (problem) {
+      var warn = el("div", "ios-fund-warn", problem);
+      warn.setAttribute("role", "status");
+      mounted.appendChild(warn);
+    }
+
+    var list = el("div", "ios-fund-list");
+    if (state.loaded && !state.funds.length) {
+      list.appendChild(el("div", "ios-fund-empty", "还没有监控的基金，输入代码添加"));
+    } else {
+      state.funds.forEach(function (fund) {
+        list.appendChild(buildRow(fund));
+      });
+    }
+    mounted.appendChild(list);
+    mounted.appendChild(buildAddForm());
+  }
+
+  function load() {
+    return api("/api/funds")
+      .then(function (data) {
+        state.funds = Array.isArray(data.funds) ? data.funds : [];
+        state.lastRefresh = data.last_refresh;
+        state.lastError = data.last_error;
+        state.netError = null;
+        state.loaded = true;
+        render();
+      })
+      .catch(function (err) {
+        // 拉不到就沿用上一次的数据，只加一行错误说明
+        state.netError = "读取监控服务失败：" + err.message;
+        state.loaded = true;
+        render();
+      });
+  }
+
+  // 卡片要落在甲乙丙丁分组的下方。
+  // 页面结构是三个兄弟节点：#information-widgets → 服务分组容器 → #footer，
+  // 所以插在 #footer 之前就正好在所有分组下面，且和它们同一层级、同一宽度基准。
+  // 左右间距由 CSS 对齐 Tailwind 的 m-5 / sm:m-9，不会超出。
+  function insertionPoint() {
+    var footer = document.getElementById("footer");
+    if (footer && footer.parentElement) {
+      return { parent: footer.parentElement, before: footer };
+    }
+    // 兜底：footer 还没渲染时，挂到信息栏所在容器的末尾
+    var info = document.getElementById("information-widgets");
+    if (info && info.parentElement) {
+      return { parent: info.parentElement, before: null };
+    }
+    return null;
+  }
+
+  function mount() {
+    var point = insertionPoint();
+    if (!point) return false;
+
+    if (mounted && document.body.contains(mounted)) {
+      // 已挂载：若当初走的是兜底位置，等 footer 出现后挪到正确位置（分组下方）
+      if (point.before && mounted.nextElementSibling !== point.before) {
+        point.parent.insertBefore(mounted, point.before);
+      }
+      return true;
+    }
+
+    var node = el("div", "ios-fund");
+    node.id = CARD_ID;
+    point.parent.insertBefore(node, point.before);
+    mounted = node;
+    render();      // 先用已有 state 画出来，避免闪空白
+    load();        // 再拉最新数据
+    return true;
+  }
+
+  var inited = false;
+
+  function init() {
+    // 只初始化一次：重复执行会叠加 observer/timer/监听器，导致请求翻倍、旧 timer 泄漏
+    if (inited) return;
+    inited = true;
+
+    mount();
+
+    // React 水合/重渲染可能把卡片冲掉，持续守护并按需重新插入
+    var obs = new MutationObserver(function () {
+      mount();
+    });
+    obs.observe(document.documentElement, { childList: true, subtree: true });
+
+    if (timer) clearInterval(timer);
+    timer = setInterval(function () {
+      // 页面在后台时不必轮询，省流量；切回来会立即刷新
+      if (document.hidden) return;
+      if (mounted && document.body.contains(mounted)) load();
+    }, POLL_MS);
+
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden && mounted && document.body.contains(mounted)) load();
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();
+

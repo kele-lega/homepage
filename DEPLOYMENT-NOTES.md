@@ -173,6 +173,62 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:3001
 
 ---
 
+## 9. fund-monitor 基金监控服务
+
+只用 Python 标准库，`docker compose build fund-monitor` 即可，无需 pip 依赖。
+
+### 9.1 生产 vs 本地的访问路径不同
+
+生产由 Caddy 把 `/fund-monitor/*` 反代到 `fund-monitor:8090`（`handle_path` 会剥掉前缀），
+浏览器同源访问，不需要 CORS，服务也不对公网开端口。
+
+本地 `docker-compose.override.yml` 里 caddy 不启动、直接访问 `localhost:3000`，
+所以 override 额外做了两件事：把 8090 映射到宿主机，并设 `FUND_ALLOW_ORIGIN=http://localhost:3000`
+只放开这一个来源。前端 `custom.js` 按 `location.port === "3000"` 自动切换到 `localhost:8090`。
+
+如需手动指定后端地址，在浏览器控制台设 `window.FUND_MONITOR_BASE`。
+
+### 9.2 数据持久化
+
+`./fund-monitor/data` 挂到容器 `/app/data`，里面两个文件：
+
+- `funds.json` — 监控的基金代码列表
+- `cache.json` — 最近一次成功抓取的结果、最后刷新时间、错误状态
+
+写入用「临时文件 + 原子替换」，容器重启或并发读不会读到半写入的 JSON。
+备份或迁移直接拷这个目录即可。
+
+### 9.3 数据源说明
+
+用天天基金移动端 `fundmobapi.eastmoney.com/FundMNewApi/FundMNFInfo`，一次请求批量拿多只基金。
+
+注意：旧的 `fundgz.1234567.com.cn/js/{code}.js` 已失效，它返回 **HTTP 200 但 body 是 HTML 404 页**。
+所以判断成功必须校验响应内容，不能只看状态码 —— 代码里已按这个前提处理，换源时别踩回去。
+
+### 9.4 验证
+
+```bash
+# 单元测试（53 项，不依赖网络）
+cd fund-monitor && python3 -m unittest discover -p "test_*.py"
+
+# 健康检查（生产走 Caddy，带 Basic Auth）
+curl -u "$AUTH_USER:密码" https://kelelega.dpdns.org/fund-monitor/healthz
+
+# 本地直连
+curl localhost:8090/healthz
+curl -X POST -H 'Content-Type: application/json' -d '{"code":"000001"}' localhost:8090/api/funds
+curl localhost:8090/api/funds
+curl -X DELETE localhost:8090/api/funds/000001
+
+# 确认后台在持续抓取（看时间戳在变）
+docker compose logs -f fund-monitor
+```
+
+环境变量：`FUND_REFRESH_SEC`（默认 60，最小 10）、`FUND_PORT`、`FUND_HOST`、
+`FUND_DATA_DIR`、`FUND_ALLOW_ORIGIN`。
+
+---
+
 ## 总结对照表
 
 | 项目 | 云端 Linux | Windows 10 本地 |
@@ -185,3 +241,4 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:3001
 | Google Calendar | 直连 | 需代理/VPN |
 | 防火墙 | 手动开放端口 | 自动放行 |
 | 行尾符 | LF（无问题） | 注意 CRLF 问题 |
+| fund-monitor 访问 | Caddy `/fund-monitor/*` 同源 | 直连 `localhost:8090` + CORS |
