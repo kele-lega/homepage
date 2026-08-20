@@ -678,7 +678,11 @@
 
     var main = el("div", "ios-fund-main");
     var nameLine = el("div", "ios-fund-nameline");
-    nameLine.appendChild(el("span", "ios-fund-name", fund.name || "未知名称"));
+    var fullName = fund.name || "未知名称";
+    var name = el("span", "ios-fund-name", fullName);
+    // 视觉上过长名称使用 CSS 省略号，悬停时仍可查看完整基金名称。
+    name.title = fullName;
+    nameLine.appendChild(name);
     nameLine.appendChild(el("span", "ios-fund-code", fund.code));
     main.appendChild(nameLine);
 
