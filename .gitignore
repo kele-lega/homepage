@@ -10,3 +10,6 @@ config/logs/
 fund-monitor/data/cache.json
 fund-monitor/data/*.tmp
 __pycache__/
+
+# 独立项目，不纳入 homepage 仓库
+real-time-fund/

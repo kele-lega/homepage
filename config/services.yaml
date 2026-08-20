@@ -37,6 +37,13 @@
         href: "https://github.com"
         description: Where the world builds software
         ping: github.com
+    - Tiktok:
+        icon: /images/app/tiktok.svg
+        href: "https://www.douyin.com"
+        description: "刷会视频放松下吧~"
+        ping: douyin.com
+    
+
     
 
 - 丙:

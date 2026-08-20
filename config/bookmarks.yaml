@@ -6,7 +6,7 @@
     - 百度翻译:
         - icon: /images/bookmarks/google-translate.svg
           abbr: 百度翻译
-          href: https://fanyi.baidu.com/mtpe-individual/transText?aldtype=16047&ext_channel=Aldtype#/auto/zh
+          href: https://fanyi.baidu.com/
     - 微信传输助手:
         - icon: /images/bookmarks/wechat.svg
           abbr: 微信传输助手
@@ -15,10 +15,20 @@
         - icon: https://a.favicon.im/jyshare.com?larger=true
           abbr: 文本比对助手
           href: https://www.jyshare.com/front-end/8006/
-    - 食用手册:
-        - icon: /images/bookmarks/cook.svg
-          abbr: 食用手册
-          href: https://cook.yunyoujun.cn/
+    - Google 日历:
+        - icon: /images/bookmarks/google-calendar.svg
+          abbr: Google 日历
+          href: https://calendar.google.com/calendar/
+    - Gmail:
+        - icon: /images/bookmarks/gmail.svg
+          abbr: Gmail
+          href: https://mail.google.com/
+    - QQ邮箱:
+        - icon: /images/bookmarks/twake-mail.svg
+          abbr: QQ邮箱
+          href: https://wx.mail.qq.com/
+
+    
 
 
 
@@ -27,10 +37,10 @@
         - icon: /images/bookmarks/chatgpt.svg
           abbr: ChatGPT
           href: https://sorryios.ai/pastel/#/carlist?from=inner
-    - TokenMP:
-        - icon: https://api.tokenmp.cn/favicon.ico
-          abbr: TokenMP
-          href: https://api.tokenmp.cn/panel
+    - 凡人:
+        - icon: https://fanrenapi.com/favicon.ico
+          abbr: 凡人
+          href: https://fanrenapi.com/
 
 
 - Entertainment:
@@ -44,10 +54,12 @@
         - icon: /images/bookmarks/google-cloud.svg
           abbr: 云服务
           href: https://www.ykvps.com/service?groupid=305
-    - Google 日历:
-        - icon: /images/bookmarks/google-calendar.svg
-          abbr: Google 日历
-          href: https://calendar.google.com/calendar
+    
+    - 食用手册:
+        - icon: /images/bookmarks/cook.svg
+          abbr: 食用手册
+          href: https://cook.yunyoujun.cn/
+
 
 
 
