@@ -88,7 +88,15 @@ services:
     depends_on:
       - homepage
       - fund-monitor
+    networks:
+      - default
+      - real-time-fund
 
 volumes:
   caddy_data:
   caddy_config:
+
+networks:
+  real-time-fund:
+    external: true
+    name: real-time-fund_default

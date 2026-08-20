@@ -573,10 +573,12 @@
   }
 
   // 基金详情站（real-time-fund）地址。本地默认同主机 3000 端口；
-  // 生产地址由 window.REAL_TIME_FUND_URL 指定（留空时仍退回 3000，云端部署时再补配置）
+  // 云端通过 Caddy 使用独立子域名，避免把 Next.js 静态站点挂在子路径下导致资源路径错误。
   var REAL_TIME_FUND_PORT = "3000";
+  var REAL_TIME_FUND_PRODUCTION_URL = "https://fund.kelelega.dpdns.org";
   function realTimeFundBase() {
     if (window.REAL_TIME_FUND_URL) return window.REAL_TIME_FUND_URL;
+    if (location.hostname === "kelelega.dpdns.org") return REAL_TIME_FUND_PRODUCTION_URL;
     return location.protocol + "//" + location.hostname + ":" + REAL_TIME_FUND_PORT;
   }
 
@@ -830,19 +832,26 @@
       });
   }
 
-  // 卡片要落在甲乙丙丁分组的下方。
-  // 页面结构是三个兄弟节点：#information-widgets → 服务分组容器 → #footer，
-  // 所以插在 #footer 之前就正好在所有分组下面，且和它们同一层级、同一宽度基准。
-  // 左右间距由 CSS 对齐 Tailwind 的 m-5 / sm:m-9，不会超出。
+  // 卡片放进甲分组的展开内容末尾，紧贴甲组服务列表正下方。
+  // 这样它不会参与甲/乙/丙/丁的横向分栏，而是作为甲组内的单独一行显示。
   function insertionPoint() {
-    var footer = document.getElementById("footer");
-    if (footer && footer.parentElement) {
-      return { parent: footer.parentElement, before: footer };
+    var groups = document.getElementById("layout-groups");
+    if (groups) {
+      var serviceGroups = groups.querySelectorAll(".services-group");
+      for (var i = 0; i < serviceGroups.length; i++) {
+        var title = serviceGroups[i].querySelector(".service-group-name");
+        if (title && title.textContent.trim() === "甲") {
+          var panel = serviceGroups[i].querySelector('[id^="headlessui-disclosure-panel"]');
+          if (panel) return { parent: panel, before: null };
+        }
+      }
     }
-    // 兜底：footer 还没渲染时，挂到信息栏所在容器的末尾
-    var info = document.getElementById("information-widgets");
-    if (info && info.parentElement) {
-      return { parent: info.parentElement, before: null };
+
+    // 甲分组尚未渲染时暂不挂载，避免先插到错误位置后又被 React 重排。
+    // 没有 layout-groups 时保留旧的 footer 兜底，兼容 Homepage 结构变化。
+    var footer = document.getElementById("footer");
+    if (!groups && footer && footer.parentElement) {
+      return { parent: footer.parentElement, before: footer };
     }
     return null;
   }
@@ -852,8 +861,8 @@
     if (!point) return false;
 
     if (mounted && document.body.contains(mounted)) {
-      // 已挂载：若当初走的是兜底位置，等 footer 出现后挪到正确位置（分组下方）
-      if (point.before && mounted.nextElementSibling !== point.before) {
+      // 已挂载：Homepage 重渲染后，确保卡片仍在甲组内容末尾。
+      if (mounted.parentElement !== point.parent || mounted.nextElementSibling !== point.before) {
         point.parent.insertBefore(mounted, point.before);
       }
       return true;

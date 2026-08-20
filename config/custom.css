@@ -361,8 +361,8 @@ li.service .w-3.h-3.opacity-50 svg {
  * 涨绿跌红，用 A 股习惯；颜色在亮/暗色主题下都保证对比度。
  */
 .ios-fund {
-  --fund-up: #34c759;
-  --fund-down: #ff3b30;
+  --fund-up: #ff3b30;
+  --fund-down: #34c759;
   font-family: var(--ios-font);
   /* 左右间距对齐甲乙丙丁分组的外边缘（实测为 1rem，sm 起 2rem），
      比信息栏的 m-5/m-9 各窄 4px，这样竖直边线和分组卡片完全对齐 */
@@ -408,6 +408,13 @@ li.service .w-3.h-3.opacity-50 svg {
     width: calc(25% - 1rem);
     max-width: calc(25% - 1rem);
   }
+}
+
+/* 放在甲组内部时占满该组内容宽度，确保视觉上正下方单列显示 */
+.services-group .ios-fund {
+  width: 100%;
+  max-width: 100%;
+  margin: 0.5rem 0 0;
 }
 
 .ios-fund-head {

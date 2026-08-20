@@ -18,3 +18,12 @@ kelelega.dpdns.org {
 		reverse_proxy homepage:3000
 	}
 }
+
+fund.kelelega.dpdns.org {
+	# 基金详情站与 Homepage 共用认证
+	basic_auth {
+		{$AUTH_USER} {$AUTH_HASH}
+	}
+
+	reverse_proxy app:3000
+}
