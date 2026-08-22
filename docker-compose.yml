@@ -4,16 +4,16 @@ services:
     container_name: homepage
     entrypoint: ["/custom-entrypoint.sh"]
     command: ["node", "server.js"]
-    # 不暴露外网端口，仅在内网被 caddy 反代
-    expose:
-      - "3000"
+    # 本地访问 Homepage 使用 3001；3000 保留给 real-time-fund
+    ports:
+      - "3001:3000"
     volumes:
       - ./config:/app/config
       - ./public:/app/public
       - ./entrypoint.sh:/custom-entrypoint.sh:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
-      HOMEPAGE_ALLOWED_HOSTS: localhost,127.0.0.1,103.79.186.22,kelelega.dpdns.org
+      HOMEPAGE_ALLOWED_HOSTS: localhost,localhost:3001,127.0.0.1,127.0.0.1:3001,103.79.186.22,kelelega.dpdns.org
     restart: unless-stopped
     depends_on:
       - glances
@@ -57,8 +57,9 @@ services:
   fund-monitor:
     build: ./fund-monitor
     container_name: fund-monitor
-    expose:
-      - "8090"
+    # 本地直连 Homepage:3001 时，浏览器通过 8090 访问监控服务
+    ports:
+      - "8090:8090"
     volumes:
       # 数据目录挂宿主机，容器重启后基金列表和缓存不丢
       - ./fund-monitor/data:/app/data
@@ -66,6 +67,7 @@ services:
       - FUND_DATA_DIR=/app/data
       - FUND_HOST=0.0.0.0
       - FUND_PORT=8090
+      - FUND_ALLOW_ORIGIN=http://localhost:3001,http://127.0.0.1:3001
       - FUND_REFRESH_SEC=${FUND_REFRESH_SEC:-60}
     restart: unless-stopped
 

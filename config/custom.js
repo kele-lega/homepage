@@ -618,6 +618,7 @@
 
   var state = { funds: [], lastRefresh: null, lastError: null, netError: null, loaded: false };
   var draft = ""; // 输入框内容，React 重渲染冲掉卡片后不丢
+  var expanded = true; // 页面生命周期内保留展开状态，完整刷新后恢复展开
   var timer = null;
   var mounted = null;
 
@@ -781,6 +782,19 @@
     var head = el("div", "ios-fund-head");
     head.appendChild(el("span", "ios-fund-title", "基金净值"));
 
+    var toggleLabel = expanded ? "收起基金净值内容" : "展开基金净值内容";
+    var toggle = el("button", "ios-fund-toggle", expanded ? "⌃" : "⌄");
+    toggle.type = "button";
+    toggle.setAttribute("aria-expanded", String(expanded));
+    toggle.setAttribute("aria-controls", "ios-fund-body");
+    toggle.setAttribute("aria-label", toggleLabel);
+    toggle.title = toggleLabel;
+    toggle.addEventListener("click", function () {
+      expanded = !expanded;
+      render();
+    });
+    head.appendChild(toggle);
+
     var right = el("span", "ios-fund-head-right");
     var status = el("span", "ios-fund-status");
     if (!state.loaded) {
@@ -798,12 +812,16 @@
     head.appendChild(right);
     mounted.appendChild(head);
 
+    var body = el("div", "ios-fund-body");
+    body.id = "ios-fund-body";
+    body.hidden = !expanded;
+
     // 错误提示：保留下方缓存数据继续显示，不遮挡内容
     var problem = state.netError || state.lastError;
     if (problem) {
       var warn = el("div", "ios-fund-warn", problem);
       warn.setAttribute("role", "status");
-      mounted.appendChild(warn);
+      body.appendChild(warn);
     }
 
     var list = el("div", "ios-fund-list");
@@ -814,8 +832,9 @@
         list.appendChild(buildRow(fund));
       });
     }
-    mounted.appendChild(list);
-    mounted.appendChild(buildAddForm());
+    body.appendChild(list);
+    body.appendChild(buildAddForm());
+    mounted.appendChild(body);
   }
 
   function load() {
