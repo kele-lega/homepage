@@ -4,16 +4,16 @@ services:
     container_name: homepage
     entrypoint: ["/custom-entrypoint.sh"]
     command: ["node", "server.js"]
-    # 本地访问 Homepage 使用 3001；3000 保留给 real-time-fund
-    ports:
-      - "3001:3000"
+    # 生产不映射宿主机端口，由 Caddy 反代；本地端口见 docker-compose.override.yml
+    expose:
+      - "3000"
     volumes:
       - ./config:/app/config
       - ./public:/app/public
       - ./entrypoint.sh:/custom-entrypoint.sh:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
-      HOMEPAGE_ALLOWED_HOSTS: localhost,localhost:3001,127.0.0.1,127.0.0.1:3001,103.79.186.22,kelelega.dpdns.org
+      HOMEPAGE_ALLOWED_HOSTS: localhost,localhost:3000,127.0.0.1,127.0.0.1:3000,103.79.186.22,kelelega.dpdns.org
     restart: unless-stopped
     depends_on:
       - glances
@@ -57,9 +57,9 @@ services:
   fund-monitor:
     build: ./fund-monitor
     container_name: fund-monitor
-    # 本地直连 Homepage:3001 时，浏览器通过 8090 访问监控服务
-    ports:
-      - "8090:8090"
+    # 生产不映射宿主机端口，由 Caddy /fund-monitor 同源反代；本地 8090 见 override
+    expose:
+      - "8090"
     volumes:
       # 数据目录挂宿主机，容器重启后基金列表和缓存不丢
       - ./fund-monitor/data:/app/data
@@ -67,7 +67,7 @@ services:
       - FUND_DATA_DIR=/app/data
       - FUND_HOST=0.0.0.0
       - FUND_PORT=8090
-      - FUND_ALLOW_ORIGIN=http://localhost:3001,http://127.0.0.1:3001
+      - FUND_ALLOW_ORIGIN=http://localhost:3000,http://127.0.0.1:3000
       - FUND_REFRESH_SEC=${FUND_REFRESH_SEC:-60}
     restart: unless-stopped
 
@@ -90,15 +90,7 @@ services:
     depends_on:
       - homepage
       - fund-monitor
-    networks:
-      - default
-      - real-time-fund
 
 volumes:
   caddy_data:
   caddy_config:
-
-networks:
-  real-time-fund:
-    external: true
-    name: real-time-fund_default

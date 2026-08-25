@@ -572,16 +572,6 @@
     return list;
   }
 
-  // 基金详情站（real-time-fund）地址。本地默认同主机 3000 端口；
-  // 云端通过 Caddy 使用独立子域名，避免把 Next.js 静态站点挂在子路径下导致资源路径错误。
-  var REAL_TIME_FUND_PORT = "3000";
-  var REAL_TIME_FUND_PRODUCTION_URL = "https://fund.kelelega.dpdns.org";
-  function realTimeFundBase() {
-    if (window.REAL_TIME_FUND_URL) return window.REAL_TIME_FUND_URL;
-    if (location.hostname === "kelelega.dpdns.org") return REAL_TIME_FUND_PRODUCTION_URL;
-    return location.protocol + "//" + location.hostname + ":" + REAL_TIME_FUND_PORT;
-  }
-
   // 探测：/healthz 必须返回 JSON 且 ok=true。
   // homepage 自己的 404 页面是 HTML，解析就失败，能被正确排除。
   function probe(base) {
@@ -803,9 +793,8 @@
       status.textContent = "更新 " + shortTime(state.lastRefresh);
     }
     right.appendChild(status);
-    // 跳转到独立的基金详情站；V1 只跳首页，不要求定位到具体某只基金
     var detailLink = el("a", "ios-fund-detail", "详细查看 ›");
-    detailLink.href = realTimeFundBase();
+    detailLink.href = "https://fund.cc.cd/";
     detailLink.target = "_blank";
     detailLink.rel = "noopener noreferrer";
     right.appendChild(detailLink);

@@ -6,7 +6,7 @@
 
 - 一台有公网 IP 的 Linux 服务器，安装 Docker（含 compose 插件）
 - 域名 `kelelega.dpdns.org` 的 A 记录指向服务器 IP（用于 Caddy 自动 HTTPS）
-- 开放安全组 / 防火墙的 80、443 端口（3000 不用开，real-time-fund 走公网 IP 直连或自行加防护）
+- 开放安全组 / 防火墙的 80、443 端口
 
 ## 1. 部署 homepage（含 Caddy + 基金监控）
 
@@ -30,23 +30,12 @@ docker compose -f docker-compose.yml up -d --build
 
 包含的服务：homepage 本体、glances（系统监控）、ical-proxy（日历中转）、
 fund-monitor（基金净值，页面卡片自动出现）、caddy（HTTPS + 认证）。
+首页基金卡片的「详细查看」跳转到外部站点 `https://fund.cc.cd/`。
 
-## 2. 部署 real-time-fund（基金详情站）
-
-```bash
-git clone https://github.com/kele-lega/real-time-fund.git
-cd real-time-fund
-docker compose up -d --build
-```
-
-默认不需要 `.env.local`（Supabase 等留空即可，估算净值会自动在
-天天基金/新浪之间降级取数）。占用宿主机 3000 端口。
-
-## 3. 日常更新
+## 2. 日常更新
 
 ```bash
 cd homepage && git pull && docker compose -f docker-compose.yml up -d --build
-cd ../real-time-fund && git pull && docker compose up -d --build
 ```
 
 ## 数据在哪（备份这几个就够）
