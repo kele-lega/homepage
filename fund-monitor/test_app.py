@@ -136,6 +136,32 @@ class TestRefreshMerge(StoreCase):
         self.assertEqual([f["code"] for f in st.snapshot()["funds"]], ["110011", "000001"])
 
 
+class TestStoreManager(unittest.TestCase):
+    def test_users_have_separate_files(self):
+        directory = tempfile.mkdtemp(prefix="fund-users-")
+        manager = app.StoreManager(data_dir=directory)
+        manager.for_user("alice").codes.append("000001")
+        manager.for_user("alice").save_funds()
+        self.assertEqual(manager.for_user("bob").list_codes(), [])
+        self.assertTrue(os.path.exists(os.path.join(directory, "users", "alice", "funds.json")))
+
+    def test_legacy_data_migrates_to_admin_once(self):
+        directory = tempfile.mkdtemp(prefix="fund-migrate-")
+        app.write_json(os.path.join(directory, "funds.json"), {"funds": ["000001"]})
+        manager = app.StoreManager(data_dir=directory, migration_user="admin")
+        self.assertEqual(manager.for_user("admin").list_codes(), ["000001"])
+        manager.for_user("admin").codes.append("110011")
+        manager.for_user("admin").save_funds()
+        again = app.StoreManager(data_dir=directory, migration_user="admin")
+        self.assertEqual(again.for_user("admin").list_codes(), ["000001", "110011"])
+
+    def test_rejects_unsafe_user(self):
+        manager = app.StoreManager(data_dir=tempfile.mkdtemp(prefix="fund-users-"))
+        for user in ("", "../alice", "a/b", ".", ".."):
+            with self.assertRaises(ValueError, msg=user):
+                manager.for_user(user)
+
+
 class TestAtomicWrite(unittest.TestCase):
     def test_write_json_atomic(self):
         d = tempfile.mkdtemp(prefix="fund-atomic-")

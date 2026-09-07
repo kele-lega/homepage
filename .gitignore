@@ -8,7 +8,10 @@ config/logs/
 # fund-monitor 抓取缓存（每个刷新周期都会变，纯运行时状态）
 # funds.json 是基金列表，属于配置，保留入库
 fund-monitor/data/cache.json
+fund-monitor/data/users/*/cache.json
 fund-monitor/data/*.tmp
+ical-proxy/data/users.json
+ical-proxy/data/*.tmp
 __pycache__/
 
 # 独立项目，不纳入 homepage 仓库

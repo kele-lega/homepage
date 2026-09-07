@@ -15,6 +15,8 @@
 """
 import json
 import os
+import re
+import shutil
 import threading
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -24,6 +26,9 @@ from data_source import CST, fetch_funds, valid_code
 DATA_DIR = os.environ.get("FUND_DATA_DIR", "/app/data")
 FUNDS_FILE = os.path.join(DATA_DIR, "funds.json")
 CACHE_FILE = os.path.join(DATA_DIR, "cache.json")
+USERS_DIR = os.path.join(DATA_DIR, "users")
+MIGRATION_USER = os.environ.get("FUND_MIGRATION_USER", "admin")
+DEFAULT_USER = os.environ.get("FUND_DEFAULT_USER", "")
 REFRESH_SEC = max(int(os.environ.get("FUND_REFRESH_SEC", "60")), 10)
 HOST = os.environ.get("FUND_HOST", "0.0.0.0")
 PORT = int(os.environ.get("FUND_PORT", "8090"))
@@ -32,6 +37,7 @@ PORT = int(os.environ.get("FUND_PORT", "8090"))
 ALLOW_ORIGINS = [o.strip() for o in os.environ.get("FUND_ALLOW_ORIGIN", "").split(",") if o.strip()]
 
 MAX_BODY = 4096  # 请求体上限，防止超大 body
+USER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
 
 def now_iso() -> str:
@@ -193,22 +199,83 @@ class Store:
             }
 
 
-STORE = Store()
+def valid_user(user):
+    """认证用户名只能用于安全目录名，拒绝空值和路径穿越。"""
+    return (
+        isinstance(user, str)
+        and bool(USER_RE.fullmatch(user))
+        and user not in (".", "..")
+    )
+
+
+class StoreManager:
+    """按认证用户懒加载 Store；每个用户拥有独立的基金列表和缓存。"""
+
+    def __init__(self, data_dir=DATA_DIR, migration_user=MIGRATION_USER):
+        self.data_dir = data_dir
+        self.users_dir = os.path.join(data_dir, "users")
+        self.migration_user = migration_user if valid_user(migration_user) else "admin"
+        self.lock = threading.RLock()
+        self.stores = {}
+        self._migrate_legacy()
+
+    def _paths(self, user):
+        if not valid_user(user):
+            raise ValueError("认证用户名非法")
+        directory = os.path.join(self.users_dir, user)
+        return os.path.join(directory, "funds.json"), os.path.join(directory, "cache.json")
+
+    def _migrate_legacy(self):
+        """把旧单用户数据一次性复制到 admin，保留原文件便于回滚。"""
+        legacy_funds = os.path.join(self.data_dir, "funds.json")
+        legacy_cache = os.path.join(self.data_dir, "cache.json")
+        if not (os.path.exists(legacy_funds) or os.path.exists(legacy_cache)):
+            return
+        funds_path, cache_path = self._paths(self.migration_user)
+        if not os.path.exists(funds_path) and os.path.exists(legacy_funds):
+            os.makedirs(os.path.dirname(funds_path), exist_ok=True)
+            shutil.copyfile(legacy_funds, funds_path)
+        if not os.path.exists(cache_path) and os.path.exists(legacy_cache):
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            shutil.copyfile(legacy_cache, cache_path)
+
+    def for_user(self, user):
+        if not valid_user(user):
+            raise ValueError("未识别的登录用户")
+        with self.lock:
+            store = self.stores.get(user)
+            if store is None:
+                directory = os.path.join(self.users_dir, user)
+                store = Store(
+                    funds_file=os.path.join(directory, "funds.json"),
+                    cache_file=os.path.join(directory, "cache.json"),
+                )
+                self.stores[user] = store
+            return store
+
+    def all_stores(self):
+        with self.lock:
+            return list(self.stores.values())
+
+
+STORE = StoreManager()
 STOP = threading.Event()
 
 
 def refresher(store=None, interval=REFRESH_SEC, stop=None):
-    """后台常驻：先立刻抓一轮，之后固定间隔。异常一律不让线程死掉"""
-    store = store or STORE
+    """后台常驻：刷新所有已登录用户，异常一律不让线程死掉"""
+    backend = store or STORE
     stop = stop or STOP
     while not stop.is_set():
         try:
-            err = store.refresh()
-            if err:
-                print("[fund-monitor] 抓取异常：%s" % err, flush=True)
-            else:
-                print("[fund-monitor] 抓取完成 %s，共 %d 只"
-                      % (store.last_refresh, len(store.list_codes())), flush=True)
+            stores = backend.all_stores() if isinstance(backend, StoreManager) else [backend]
+            for user_store in stores:
+                err = user_store.refresh()
+                if err:
+                    print("[fund-monitor] 抓取异常：%s" % err, flush=True)
+                else:
+                    print("[fund-monitor] 刷新完成 %s，共 %d 只"
+                          % (user_store.last_refresh, len(user_store.list_codes())), flush=True)
         except Exception as exc:  # 兜底，保证定时循环不中断
             print("[fund-monitor] 刷新线程异常：%s" % exc, flush=True)
         stop.wait(interval)
@@ -223,7 +290,18 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---------- 工具 ----------
     def _store(self):
-        return self.store or STORE
+        backend = self.store or STORE
+        if isinstance(backend, StoreManager):
+            return backend.for_user(self._user())
+        return backend
+
+    def _user(self):
+        user = self.headers.get("X-Authenticated-User")
+        if not user:
+            user = DEFAULT_USER
+        if not valid_user(user):
+            raise ValueError("未识别的登录用户")
+        return user
 
     def _send(self, code, payload):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -281,7 +359,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self._path()
-        store = self._store()
+        try:
+            store = self._store()
+        except ValueError as exc:
+            self._err(401, str(exc))
+            return
         if path == "/healthz":
             self._send(200, {
                 "ok": True,
@@ -305,15 +387,19 @@ class Handler(BaseHTTPRequestHandler):
             self._err(404, "not found")
             return
         try:
+            store = self._store()
             data = self._read_body()
         except ValueError as exc:
+            if str(exc) == "未识别的登录用户":
+                self._err(401, str(exc))
+                return
             self._err(400, str(exc))
             return
         code = str(data.get("code") or "").strip()
         if not valid_code(code):
             self._err(400, "基金代码必须是 6 位数字")
             return
-        created, entry = self._store().add(code)
+        created, entry = store.add(code)
         # 幂等：已存在返回 200，新增返回 201
         self._send(201 if created else 200, {"created": created, "fund": entry})
 
@@ -323,11 +409,16 @@ class Handler(BaseHTTPRequestHandler):
         if not path.startswith(prefix):
             self._err(404, "not found")
             return
+        try:
+            store = self._store()
+        except ValueError as exc:
+            self._err(401, str(exc))
+            return
         code = path[len(prefix):]
         if not valid_code(code):
             self._err(400, "基金代码必须是 6 位数字")
             return
-        if not self._store().remove(code):
+        if not store.remove(code):
             self._err(404, "该基金不在监控列表中")
             return
         self._send(200, {"deleted": code})
@@ -347,8 +438,8 @@ def make_server(host=HOST, port=PORT, store=None):
 if __name__ == "__main__":
     threading.Thread(target=refresher, daemon=True).start()
     srv = make_server()
-    print("[fund-monitor] listening on %s:%d，间隔 %ds，监控 %d 只"
-          % (HOST, PORT, REFRESH_SEC, len(STORE.list_codes())), flush=True)
+    print("[fund-monitor] listening on %s:%d，间隔 %ds，已加载 %d 个用户"
+          % (HOST, PORT, REFRESH_SEC, len(STORE.all_stores())), flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

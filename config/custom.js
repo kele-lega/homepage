@@ -607,6 +607,7 @@
   }
 
   var state = { funds: [], lastRefresh: null, lastError: null, netError: null, loaded: false };
+  var calendar = { open: false, loaded: false, configured: false, url: "", draft: "", message: "", busy: false };
   var draft = ""; // 输入框内容，React 重渲染冲掉卡片后不丢
   var expanded = true; // 页面生命周期内保留展开状态，完整刷新后恢复展开
   var timer = null;
@@ -630,6 +631,121 @@
     });
   }
 
+  function calendarApi(options) {
+    return fetch("/calendar/api/calendar", Object.assign({ cache: "no-store" }, options || {})).then(function (resp) {
+      return resp.json().then(function (body) {
+        if (!resp.ok) throw new Error((body && body.error) || "HTTP " + resp.status);
+        return body;
+      });
+    });
+  }
+
+  function loadCalendar() {
+    calendar.message = "";
+    return calendarApi()
+      .then(function (data) {
+        calendar.configured = data.configured === true;
+        calendar.url = typeof data.url === "string" ? data.url : "";
+        calendar.draft = calendar.url;
+        calendar.loaded = true;
+        render();
+      })
+      .catch(function (err) {
+        calendar.loaded = true;
+        calendar.message = "读取日历设置失败：" + err.message;
+        render();
+      });
+  }
+
+  function saveCalendar(url) {
+    calendar.busy = true;
+    calendar.message = "保存中…";
+    render();
+    return calendarApi({
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: url }),
+    })
+      .then(function (data) {
+        calendar.configured = data.configured === true;
+        calendar.url = typeof data.url === "string" ? data.url : "";
+        calendar.draft = calendar.url;
+        calendar.message = "日历地址已保存";
+      })
+      .catch(function (err) {
+        calendar.message = "保存失败：" + err.message;
+      })
+      .then(function () {
+        calendar.busy = false;
+        calendar.loaded = true;
+        render();
+      });
+  }
+
+  function clearCalendar() {
+    calendar.busy = true;
+    calendar.message = "清除中…";
+    render();
+    return calendarApi({ method: "DELETE" })
+      .then(function (data) {
+        calendar.configured = data.configured === true;
+        calendar.url = "";
+        calendar.draft = "";
+        calendar.message = "日历地址已清除";
+      })
+      .catch(function (err) {
+        calendar.message = "清除失败：" + err.message;
+      })
+      .then(function () {
+        calendar.busy = false;
+        calendar.loaded = true;
+        render();
+      });
+  }
+
+  function buildCalendarSettings() {
+    var wrap = el("div", "ios-fund-calendar-settings");
+    var form = el("form", "ios-fund-calendar-form");
+    var input = el("input", "ios-fund-calendar-input");
+    input.type = "url";
+    input.inputMode = "url";
+    input.placeholder = "https://…/basic.ics";
+    input.setAttribute("aria-label", "日历订阅地址");
+    input.value = calendar.draft;
+    input.disabled = calendar.busy;
+    input.addEventListener("input", function () { calendar.draft = input.value; });
+
+    var save = el("button", "ios-fund-calendar-save", "保存");
+    save.type = "submit";
+    save.disabled = calendar.busy;
+    var clear = el("button", "ios-fund-calendar-clear", "清除");
+    clear.type = "button";
+    clear.disabled = calendar.busy || !calendar.configured;
+    clear.addEventListener("click", clearCalendar);
+
+    form.appendChild(input);
+    form.appendChild(save);
+    form.appendChild(clear);
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var value = input.value.trim();
+      if (!/^https?:\/\//i.test(value)) {
+        calendar.message = "请输入 http 或 https 日历地址";
+        render();
+        return;
+      }
+      saveCalendar(value);
+    });
+    wrap.appendChild(form);
+    if (!calendar.loaded) {
+      wrap.appendChild(el("div", "ios-fund-calendar-message", "加载中…"));
+    } else if (calendar.message) {
+      wrap.appendChild(el("div", "ios-fund-calendar-message", calendar.message));
+    } else if (calendar.configured) {
+      wrap.appendChild(el("div", "ios-fund-calendar-message", "已配置当前登录用户的日历"));
+    }
+    return wrap;
+  }
   function fmtNav(value) {
     return typeof value === "number" ? value.toFixed(4) : "--";
   }
@@ -793,6 +909,15 @@
       status.textContent = "更新 " + shortTime(state.lastRefresh);
     }
     right.appendChild(status);
+    var calendarToggle = el("button", "ios-fund-calendar-toggle", calendar.open ? "关闭日历设置" : "日历设置");
+    calendarToggle.type = "button";
+    calendarToggle.setAttribute("aria-expanded", String(calendar.open));
+    calendarToggle.addEventListener("click", function () {
+      calendar.open = !calendar.open;
+      render();
+      if (calendar.open && !calendar.loaded) loadCalendar();
+    });
+    right.appendChild(calendarToggle);
     var detailLink = el("a", "ios-fund-detail", "详细查看 ›");
     detailLink.href = "https://fund.cc.cd/";
     detailLink.target = "_blank";
@@ -800,6 +925,8 @@
     right.appendChild(detailLink);
     head.appendChild(right);
     mounted.appendChild(head);
+
+    if (calendar.open) mounted.appendChild(buildCalendarSettings());
 
     var body = el("div", "ios-fund-body");
     body.id = "ios-fund-body";

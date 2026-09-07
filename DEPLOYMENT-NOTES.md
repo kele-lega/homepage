@@ -5,23 +5,25 @@
 
 ---
 
-## 1. .env 文件 — 两端都要手动创建，内容相同
+## 1. .env 文件 — 云端手动创建
 
-.env 不在 git 中（.gitignore 已忽略），每台机器需手动创建：
+`.env` 不在 git 中（`.gitignore` 已忽略），生产部署至少配置 Basic Auth 用户和管理员日历：
 
 ```bash
-# Linux
 cat > .env << 'EOF'
-ICAL_UPSTREAM=https://calendar.google.com/calendar/ical/你的token/public/basic.ics
+AUTH_USERS="admin <管理员哈希>
+wzj <wzj 的 Caddy 哈希>"
+ICAL_UPSTREAM=https://calendar.google.com/calendar/ical/管理员token/public/basic.ics
 EOF
 ```
 
-```powershell
-# Windows PowerShell
-Set-Content -Path .env -Value "ICAL_UPSTREAM=https://calendar.google.com/calendar/ical/你的token/public/basic.ics"
+密码哈希生成：
+
+```bash
+docker run --rm caddy:2-alpine caddy hash-password --plaintext '你的密码'
 ```
 
-两端内容完全一样，都是 Google Calendar 的 basic.ics URL。
+多个用户的基金和日历互相隔离。登录后在基金卡片右上角点「日历设置」即可保存或清除当前账号的订阅地址，不需要手工编辑 `users.json`。`ical-proxy/data/users.json` 仍是持久化文件，含私有 token，必须只保存在部署机，不要提交 Git；`ICAL_UPSTREAM` 仅作为 admin 的旧单用户兼容回退。
 
 ---
 
@@ -156,19 +158,16 @@ dos2unix entrypoint.sh ical-proxy/ical-proxy.py
 部署完成后依次检查：
 
 ```bash
-# 1. 三个容器都在跑
-docker ps
+# 1. 三个核心容器都在跑
+docker compose ps
 
-# 2. ical-proxy 健康检查
-docker exec ical-proxy python -c "from urllib.request import urlopen; print(urlopen('http://localhost:8089/health').read())"
+# 2. iCal 代理健康检查
+docker compose exec ical-proxy python -c "from urllib.request import Request, urlopen; print(urlopen(Request('http://localhost:8089/basic.ics', headers={'X-Authenticated-User':'admin'})).read(80))"
 
-# 3. homepage 能拉到 iCal 数据
-docker exec homepage wget -qO- http://ical-proxy:8089/basic.ics | head -5
-# 应看到 BEGIN:VCALENDAR
-
-# 4. 页面可访问
-curl -s -o /dev/null -w "%{http_code}" http://localhost:3001
-# 应返回 200
+# 3. 生产基金接口（每个账号分别检查）
+curl -u admin:密码 https://kelelega.dpdns.org/fund-monitor/healthz
+curl -u wzj:密码 https://kelelega.dpdns.org/fund-monitor/healthz
+curl -u admin:密码 https://kelelega.dpdns.org/calendar/api/calendar
 ```
 
 ---
@@ -182,21 +181,20 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:3001
 生产由 Caddy 把 `/fund-monitor/*` 反代到 `fund-monitor:8090`（`handle_path` 会剥掉前缀），
 浏览器同源访问，不需要 CORS，服务也不对公网开端口。
 
-本地 `docker-compose.override.yml` 里 caddy 不启动、直接访问 `localhost:3000`，
-所以 override 额外做了两件事：把 8090 映射到宿主机，并设 `FUND_ALLOW_ORIGIN=http://localhost:3000`
-只放开这一个来源。前端 `custom.js` 按 `location.port === "3000"` 自动切换到 `localhost:8090`。
+本地 `docker-compose.override.yml` 里 caddy 不启动、直接访问 `localhost:3000`，所以 override 额外做了两件事：把 8090 映射到宿主机，并设 `FUND_ALLOW_ORIGIN=http://localhost:3000` 只放开这一个来源。当前本地服务使用固定的 `FUND_DEFAULT_USER=local`；生产环境不要设置该变量，必须由 Caddy 注入认证用户名。
 
 如需手动指定后端地址，在浏览器控制台设 `window.FUND_MONITOR_BASE`。
 
 ### 9.2 数据持久化
 
-`./fund-monitor/data` 挂到容器 `/app/data`，里面两个文件：
+`./fund-monitor/data` 挂到容器 `/app/data`，现在按用户保存：
 
-- `funds.json` — 监控的基金代码列表
-- `cache.json` — 最近一次成功抓取的结果、最后刷新时间、错误状态
+- `users/<用户名>/funds.json` — 该用户的监控基金代码列表
+- `users/<用户名>/cache.json` — 该用户最近一次成功抓取结果、刷新时间和错误状态
+- 旧根目录 `funds.json` / `cache.json` — 首次启动自动复制给 `admin`，原文件保留
 
-写入用「临时文件 + 原子替换」，容器重启或并发读不会读到半写入的 JSON。
-备份或迁移直接拷这个目录即可。
+`ical-proxy/data/users.json` 保存用户到日历 URL 的映射，不入 Git。写入基金 JSON 使用「临时文件 + 原子替换」，容器重启或并发读不会读到半写入的 JSON。
+备份整个 `fund-monitor/data` 和 `ical-proxy/data/users.json` 即可。
 
 ### 9.3 数据源说明
 

@@ -13,13 +13,17 @@
   │
   ├─ 生产：https://kelelega.dpdns.org/*
   │     │
-  │   Caddy（Basic Auth）
-  │     ├─ /fund-monitor/*  → handle_path 剥前缀 → fund-monitor:8090
-  │     └─ 其余              → homepage:3000
+  │   Caddy（多用户 Basic Auth）
+  │     ├─ /calendar/*      → ical-proxy:8089 + X-Authenticated-User
+  │     ├─ /fund-monitor/*  → fund-monitor:8090 + X-Authenticated-User
+  │     └─ 其余              → homepage:3000 + X-Authenticated-User
+  │                                  └─ 日历服务端代理再转发用户头到 ical-proxy
   │
-  └─ 本地：http://localhost:3001（override 里 caddy 不启动）
-        homepage:3000 直接对外，fund-monitor 额外映射到宿主机 8090
+  └─ 本地：http://localhost:3000（override 里 caddy 不启动）
+        homepage:3000 直接对外，fund-monitor 额外映射到宿主机 8090，使用 local 用户
 ```
+
+生产环境的认证用户名只由 Caddy 注入，浏览器自行提交的同名 header 不应被信任。基金服务按 `fund-monitor/data/users/<用户名>/` 分区；iCal 服务按 `ical-proxy/data/users.json` 选择上游并按用户缓存。登录后可在基金卡片的「日历设置」入口保存或清除当前用户地址，API 路径为 `/calendar/api/calendar`。
 
 homepage 本身是社区镜像（gethomepage），项目自身代码只有：
 - `config/custom.js` / `config/custom.css` —— 注入到 homepage 页面里的自定义 UI（基金卡片、农历等）
@@ -36,7 +40,11 @@ homepage 本身是社区镜像（gethomepage），项目自身代码只有：
 ```
 fund-monitor 容器启动
   │
-  ├─ 后台线程 refresher()：立刻抓一轮，之后每 FUND_REFRESH_SEC 秒一轮
+  ├─ StoreManager 按首次请求的认证用户懒加载独立 Store
+  │     ├─ users/<用户名>/funds.json
+  │     └─ users/<用户名>/cache.json
+  │
+  ├─ 后台线程 refresher()：遍历已加载用户，分别抓取和保存
   │     Store.refresh() → data_source.fetch_funds(codes)
   │       → fetch_raw()：请求天天基金移动端接口，拿原始 bytes
   │       → parse_payload()：JSON 校验、Success 校验、逐行 parse_row()
@@ -97,7 +105,9 @@ use_estimate = (
 
 ## 4. 常见故障排查
 
-### 4.1 前端卡片显示"找不到监控服务"
+- **生产认证用户不生效**：确认 `.env` 使用 `AUTH_USERS`，每个用户一行“用户名 + Caddy 哈希”，然后重建 Caddy；不要继续使用旧的 `AUTH_USER` / `AUTH_HASH`。
+- **某用户日历为空**：确认 Homepage 卡片的「日历设置」中已保存地址，或检查 `ical-proxy/data/users.json` 中存在完全相同的用户名，并检查 Homepage 容器启动日志中是否出现 `Patched calendar proxy identity forwarding`。
+- **Homepage 镜像升级后拒绝启动**：这是刻意的安全保护，表示 `entrypoint.sh` 找不到日历代理补丁目标。检查新镜像的 `httpProxy(integration.url, options)` 调用位置后再适配，不要删除该检查。
 
 按 `custom.js` 里 `candidates()` 的顺序逐个排查：
 
@@ -156,24 +166,22 @@ use_estimate = (
 ## 6. 快速命令
 
 ```bash
-# 单元测试（53 项，纯标准库，不依赖网络）
+# 单元测试
 cd fund-monitor && python3 -m unittest discover -p "test_*.py"
+cd ../ical-proxy && python3 -m unittest discover -p "test_*.py"
 
-# 本地直连调试
-curl localhost:8090/healthz
-curl localhost:8090/api/funds
-curl -X POST -H 'Content-Type: application/json' -d '{"code":"000216"}' localhost:8090/api/funds
-curl -X DELETE localhost:8090/api/funds/000216
+# 本地直连调试（override 使用 local 用户）
+curl -H 'X-Authenticated-User: local' localhost:8090/healthz
+curl -H 'X-Authenticated-User: local' localhost:8090/api/funds
 
-# 生产经 Caddy（带 Basic Auth）
-curl -u "$AUTH_USER:密码" https://kelelega.dpdns.org/fund-monitor/healthz
-
-# 看后台抓取是否在正常跑（时间戳应该每个周期都在变）
-docker compose logs -f fund-monitor
+# 生产经 Caddy（用户名决定返回哪一份数据）
+curl -u admin:密码 https://kelelega.dpdns.org/fund-monitor/api/funds
+curl -u wzj:密码 https://kelelega.dpdns.org/fund-monitor/api/funds
+curl -u admin:密码 https://kelelega.dpdns.org/calendar/api/calendar
 
 # 数据文件直接查看/备份
-cat fund-monitor/data/funds.json   # 监控的代码列表
-cat fund-monitor/data/cache.json   # 最近一次成功结果 + 错误状态
+find fund-monitor/data/users -maxdepth 2 -type f -print
+cat ical-proxy/data/users.json
 ```
 
 环境变量完整列表：`FUND_DATA_DIR`、`FUND_REFRESH_SEC`、`FUND_HOST`、`FUND_PORT`、

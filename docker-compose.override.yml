@@ -27,6 +27,7 @@ services:
       - "8090:8090"
     environment:
       - FUND_ALLOW_ORIGIN=http://localhost:3000,http://127.0.0.1:3000
+      - FUND_DEFAULT_USER=local
 
   caddy:
     profiles:

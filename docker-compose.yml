@@ -47,8 +47,11 @@ services:
       - "8089"
     volumes:
       - ./ical-proxy:/app:ro
+      # users.json 由在线日历设置接口写入，需要数据目录可写并持久化。
+      - ./ical-proxy/data:/app/data
     environment:
       - ICAL_UPSTREAM=${ICAL_UPSTREAM:-https://calendar.google.com/calendar/ical/REPLACE_ME/public/basic.ics}
+      - ICAL_USERS_FILE=/app/data/users.json
     command: ["python", "-u", "ical-proxy.py"]
     restart: unless-stopped
 
@@ -84,8 +87,7 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     environment:
-      - AUTH_USER=${AUTH_USER:-admin}
-      - AUTH_HASH=${AUTH_HASH}
+      - AUTH_USERS=${AUTH_USERS:?Set AUTH_USERS to one or more 'user hash' lines}
     restart: unless-stopped
     depends_on:
       - homepage

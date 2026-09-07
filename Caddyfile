@@ -1,20 +1,26 @@
 kelelega.dpdns.org {
-	# HTTP Basic Auth，用户名/哈希从环境变量注入
+	# 支持多用户：AUTH_USERS 是空格分隔的“用户名 哈希”对，可写多个用户。
+	# Caddy 认证成功后由反代注入可信身份头，后端不接受浏览器自行提交的用户参数。
 	basic_auth {
-		{$AUTH_USER} {$AUTH_HASH}
+		{$AUTH_USERS}
 	}
 
-	# 基金监控 API：/fund-monitor/* -> fund-monitor:8090
-	# handle_path 会剥掉 /fund-monitor 前缀，服务收到的是 /api/funds、/healthz
-	# Basic Auth 在站点级别声明，这条路由同样受保护
+	# 日历设置 API 与 iCal 读取共用同源路径，Caddy 注入当前登录用户。
+	handle_path /calendar/* {
+		reverse_proxy ical-proxy:8089 {
+			header_up X-Authenticated-User {http.auth.user.id}
+		}
+	}
+
 	handle_path /fund-monitor/* {
-		reverse_proxy fund-monitor:8090
+		reverse_proxy fund-monitor:8090 {
+			header_up X-Authenticated-User {http.auth.user.id}
+		}
 	}
 
-	# 其余全部反代到 homepage 容器
-	# 用 handle 包起来：handle 之间互斥，按书写顺序匹配，
-	# 不依赖 Caddy 隐式指令排序，避免裸 reverse_proxy 抢走 /fund-monitor
 	handle {
-		reverse_proxy homepage:3000
+		reverse_proxy homepage:3000 {
+			header_up X-Authenticated-User {http.auth.user.id}
+		}
 	}
 }

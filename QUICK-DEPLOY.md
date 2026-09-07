@@ -1,36 +1,43 @@
 # 最简部署
 
-两台都不需要，同一台 Linux 服务器装好 Docker 即可。总共三条命令。
+同一台 Linux 服务器即可运行。现在支持多个 Basic Auth 账号，每个账号有独立的基金列表、基金缓存和日历。
 
 ## 0. 前置
 
 - 一台有公网 IP 的 Linux 服务器，安装 Docker（含 compose 插件）
-- 域名 `kelelega.dpdns.org` 的 A 记录指向服务器 IP（用于 Caddy 自动 HTTPS）
+- 域名 `kelelega.dpdns.org` 的 A 记录指向服务器 IP
 - 开放安全组 / 防火墙的 80、443 端口
 
-## 1. 部署 homepage（含 Caddy + 基金监控）
+## 1. 部署 homepage
 
 ```bash
 git clone https://github.com/kele-lega/homepage.git
 cd homepage
 
-# 唯一需要改的文件：.env（已被 .gitignore 忽略，不会提交）
-cat > .env <<'EOF'
-AUTH_USER=admin
-AUTH_HASH=<哈希>
-ICAL_UPSTREAM=<你的日历订阅地址>
-EOF
-# 哈希生成：docker run --rm caddy:2-alpine caddy hash-password --plaintext '你的密码'
+# 生成两个密码哈希
+docker run --rm caddy:2-alpine caddy hash-password --plaintext '管理员密码'
+docker run --rm caddy:2-alpine caddy hash-password --plaintext '第二个密码'
+```
 
-# 生产用主文件启动（不要带 override，本地开发才用）
+创建 `.env`（该文件已被 `.gitignore` 忽略）：
+
+```dotenv
+# 多个用户各占一行，用户名和哈希之间用空格分隔
+AUTH_USERS="admin <管理员哈希>
+wzj <wzj 的 Caddy 哈希>"
+ICAL_UPSTREAM=<管理员日历订阅地址>
+```
+
+# 页面登录后，基金卡片右上角的「日历设置」可以保存或清除当前账号的地址。
+# 也可预先手工创建配置文件；真实 token 不要提交 Git。
+
+启动生产配置（不要带 override）：
+
+```bash
 docker compose -f docker-compose.yml up -d --build
 ```
 
-完成后访问 `https://kelelega.dpdns.org`，输入 Basic Auth 用户名密码进入。
-
-包含的服务：homepage 本体、glances（系统监控）、ical-proxy（日历中转）、
-fund-monitor（基金净值，页面卡片自动出现）、caddy（HTTPS + 认证）。
-首页基金卡片的「详细查看」跳转到外部站点 `https://fund.cc.cd/`。
+完成后访问 `https://kelelega.dpdns.org`。使用不同账号登录时，基金卡片和日历会分别读取各自数据。网页布局不变。
 
 ## 2. 日常更新
 
@@ -38,16 +45,25 @@ fund-monitor（基金净值，页面卡片自动出现）、caddy（HTTPS + 认�
 cd homepage && git pull && docker compose -f docker-compose.yml up -d --build
 ```
 
-## 数据在哪（备份这几个就够）
+## 数据在哪
 
 | 路径 | 内容 |
 |---|---|
-| `homepage/config/` | homepage 全部配置（services.yaml 等） |
-| `homepage/fund-monitor/data/funds.json` | 监控的基金列表 |
-| Docker 卷 `caddy_data` | HTTPS 证书（丢了会自动重新签，无所谓） |
+| `config/` | Homepage 配置和页面脚本 |
+| `fund-monitor/data/users/<用户名>/funds.json` | 该用户的基金列表 |
+| `fund-monitor/data/users/<用户名>/cache.json` | 该用户的行情缓存 |
+| `ical-proxy/data/users.json` | 用户到日历地址的映射，含私有 token，不入 Git |
+| Docker 卷 `caddy_data` | HTTPS 证书 |
+
+旧版本的 `fund-monitor/data/funds.json` 和 `cache.json` 首次启动时会自动复制到 `admin` 用户目录，原文件保留不删除。
+
+## 本地开发
+
+本地 `docker compose up -d` 会使用 override，自动使用固定的 `local` 用户；本地不启动 Caddy，也不具备多账号认证。生产环境必须使用 `-f docker-compose.yml`。
 
 ## 常见问题
 
 - **改了 `config/` 或 `Caddyfile` 不生效**：`docker compose -f docker-compose.yml restart`
+- **Caddy 启动失败并提示 calendar proxy patch target not found**：Homepage 镜像内部代理代码发生变化，需要检查新版本的日历代理调用后再更新 `entrypoint.sh`，不要跳过该检查
 - **80/443 被占用**：`docker ps` 查是谁占了端口，先停掉
-- **更多细节**：`DEPLOYMENT-NOTES.md`（环境差异）、`MAINTENANCE.md`（架构与排障）
+- **更多细节**：`DEPLOYMENT-NOTES.md`、`MAINTENANCE.md`

@@ -25,17 +25,19 @@ class TestAPI(unittest.TestCase):
         ds.fetch_raw_sina = lambda code, timeout=10: (_ for _ in ()).throw(OSError("stubbed: no sina in tests"))
 
         d = tempfile.mkdtemp(prefix="fund-api-case-")
-        self.store = app.Store(funds_file=os.path.join(d, "funds.json"),
-                              cache_file=os.path.join(d, "cache.json"))
-        self.srv = app.make_server("127.0.0.1", 0, store=self.store)
+        self.backend = app.StoreManager(data_dir=d)
+        self.store = self.backend.for_user("admin")
+        self.srv = app.make_server("127.0.0.1", 0, store=self.backend)
         self.port = self.srv.server_address[1]
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
         self.addCleanup(self.srv.shutdown)
 
-    def call(self, method, path, body=None):
+    def call(self, method, path, body=None, user="admin"):
         url = "http://127.0.0.1:%d%s" % (self.port, path)
         data = json.dumps(body).encode() if body is not None else None
         req = Request(url, data=data, method=method)
+        if user:
+            req.add_header("X-Authenticated-User", user)
         if data:
             req.add_header("Content-Type", "application/json")
         try:
@@ -51,6 +53,7 @@ class TestAPI(unittest.TestCase):
     def raw_post(self, path, raw_body, ctype="application/json"):
         url = "http://127.0.0.1:%d%s" % (self.port, path)
         req = Request(url, data=raw_body, method="POST")
+        req.add_header("X-Authenticated-User", "admin")
         req.add_header("Content-Type", ctype)
         try:
             with urlopen(req, timeout=5) as resp:
@@ -58,8 +61,17 @@ class TestAPI(unittest.TestCase):
         except HTTPError as exc:
             return exc.code, json.loads(exc.read().decode())
 
-    # ---------- GET ----------
-    def test_healthz(self):
+    def test_users_are_isolated(self):
+        self.call("POST", "/api/funds", {"code": "000001"}, user="alice")
+        _, alice = self.call("GET", "/api/funds", user="alice")
+        _, bob = self.call("GET", "/api/funds", user="bob")
+        self.assertEqual([item["code"] for item in alice["funds"]], ["000001"])
+        self.assertEqual(bob["funds"], [])
+
+    def test_missing_user_is_rejected(self):
+        status, _ = self.call("GET", "/api/funds", user=None)
+        self.assertEqual(status, 401)
+
         status, body = self.call("GET", "/healthz")
         self.assertEqual(status, 200)
         self.assertTrue(body["ok"])
