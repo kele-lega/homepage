@@ -141,9 +141,7 @@ use_estimate = (
   当前是 `1rem`（<640px）/ `2rem`（≥640px），对应 Tailwind 的 `m-4`/`m-8`。如果 homepage
   升级后分组的 margin class 变了，这里也要跟着改，不能想当然用页面顶部信息栏的 margin
   （那个是 `m-5`/`m-9`，会造成 4px 的偏差）。
-- **卡片插入位置跑到分组上面**：`insertionPoint()` 依赖 `#footer` 这个 DOM id 存在。
-  homepage 升级后如果 footer 的 id 变了，会回退到插在 `#information-widgets` 后面
-  （即分组上方），需要同步更新 `insertionPoint()` 里的选择器。
+- **基金卡片位置/折叠**：自定义基金净值卡片应插在乙组服务列表末尾，并始终展开；`insertionPoint()` 依赖 `#footer` 及服务组标题查找逻辑，Homepage 升级后若 DOM 结构变化，需要同步更新选择器。
 
 ---
 

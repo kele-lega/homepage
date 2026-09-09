@@ -611,7 +611,6 @@
   var account = { loaded: false, user: "", message: "", busy: false, operation: 0, request: 0 };
   var accountSession = 0;
   var draft = ""; // 输入框内容，React 重渲染冲掉卡片后不丢
-  var expanded = true; // 页面生命周期内保留展开状态，完整刷新后恢复展开
   var settingsOpen = false;
   var settingsPhase = "closed";
   var settingsSection = "calendar";
@@ -1440,19 +1439,6 @@
     var head = el("div", "ios-fund-head");
     head.appendChild(el("span", "ios-fund-title", "基金净值"));
 
-    var toggleLabel = expanded ? "收起基金净值内容" : "展开基金净值内容";
-    var toggle = el("button", "ios-fund-toggle", expanded ? "⌃" : "⌄");
-    toggle.type = "button";
-    toggle.setAttribute("aria-expanded", String(expanded));
-    toggle.setAttribute("aria-controls", "ios-fund-body");
-    toggle.setAttribute("aria-label", toggleLabel);
-    toggle.title = toggleLabel;
-    toggle.addEventListener("click", function () {
-      expanded = !expanded;
-      render();
-    });
-    head.appendChild(toggle);
-
     var right = el("span", "ios-fund-head-right");
     var status = el("span", "ios-fund-status");
     if (!state.loaded) {
@@ -1471,7 +1457,6 @@
 
     var body = el("div", "ios-fund-body");
     body.id = "ios-fund-body";
-    body.hidden = !expanded;
 
     // 错误提示：保留下方缓存数据继续显示，不遮挡内容
     var problem = state.netError || state.lastError;
@@ -1512,15 +1497,15 @@
       });
   }
 
-  // 卡片放进甲分组的展开内容末尾，紧贴甲组服务列表正下方。
-  // 这样它不会参与甲/乙/丙/丁的横向分栏，而是作为甲组内的单独一行显示。
+  // 卡片放进乙分组的展开内容末尾，紧贴乙组服务列表正下方。
+  // 这样它不会参与甲/乙/丙/丁的横向分栏，而是作为乙组内的单独一行显示。
   function insertionPoint() {
     var groups = document.getElementById("layout-groups");
     if (groups) {
       var serviceGroups = groups.querySelectorAll(".services-group");
       for (var i = 0; i < serviceGroups.length; i++) {
         var title = serviceGroups[i].querySelector(".service-group-name");
-        if (title && title.textContent.trim() === "甲") {
+        if (title && title.textContent.trim() === "乙") {
           var panel = serviceGroups[i].querySelector('[id^="headlessui-disclosure-panel"]');
           if (panel) return { parent: panel, before: null };
         }

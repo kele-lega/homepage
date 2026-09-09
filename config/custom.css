@@ -996,28 +996,6 @@ li.service .w-3.h-3.opacity-50 svg {
   color: var(--ios-label);
 }
 
-.ios-fund-toggle {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 1.75rem;
-  height: 1.5rem;
-  padding: 0;
-  border: none;
-  border-radius: 0.35rem;
-  font: inherit;
-  font-size: 1rem;
-  line-height: 1;
-  color: var(--ios-secondary);
-  background: transparent;
-  cursor: pointer;
-}
-.ios-fund-toggle:hover {
-  color: var(--ios-label);
-  background: rgba(120, 120, 128, 0.14);
-}
-
 .ios-fund-status,
 .ios-fund-date,
 .ios-fund-code {
@@ -1186,7 +1164,6 @@ li.service .w-3.h-3.opacity-50 svg {
   opacity: 0.4;
   cursor: default;
 }
-.ios-fund-toggle:focus-visible,
 .ios-fund-del:focus-visible,
 .ios-fund-input:focus-visible,
 .ios-fund-submit:focus-visible {

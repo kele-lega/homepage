@@ -26,7 +26,8 @@
               name: Deadline
               color: red
 
-- 乙:
+- 乙: []
+- 丙:
     - BiliBili:
         icon: /images/app/bilibili.svg
         href: "https://www.bilibili.com"
@@ -42,19 +43,6 @@
         href: "https://www.douyin.com"
         description: "刷会视频放松下吧~"
         ping: douyin.com
-    
-
-    
-
-- 丙:
-    - Docker 容器:
-        icon: mdi-docker
-        widget:
-          type: glances
-          url: http://glances:61208
-          version: 4
-          metric: containers
-          chart: true
 
 - 丁:
     - CPU 使用率:
@@ -85,3 +73,11 @@
           version: 4
           metric: fs:/host
           chart: false
+    - Docker 容器:
+        icon: mdi-docker
+        widget:
+          type: glances
+          url: http://glances:61208
+          version: 4
+          metric: containers
+          chart: true
