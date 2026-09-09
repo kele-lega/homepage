@@ -15,17 +15,36 @@
   --ios-label: rgba(0, 0, 0, 0.88);
   --ios-secondary: rgba(0, 0, 0, 0.5);
   --ios-separator: rgba(0, 0, 0, 0.08);
+  --ios-settings-surface: #ffffff;
+  --ios-settings-text: #18181b;
+  --ios-settings-muted: #71717a;
+  --ios-settings-border: #d4d4d8;
+  --ios-settings-subtle: #f4f4f5;
+  --ios-settings-input: #fafafa;
 }
+
 .dark {
   --ios-label: rgba(255, 255, 255, 0.92);
   --ios-secondary: rgba(235, 235, 245, 0.6);
   --ios-separator: rgba(255, 255, 255, 0.12);
+  --ios-settings-surface: #27272a;
+  --ios-settings-text: #f4f4f5;
+  --ios-settings-muted: #a1a1aa;
+  --ios-settings-border: #52525b;
+  --ios-settings-subtle: #3f3f46;
+  --ios-settings-input: #18181b;
 }
 @media (prefers-color-scheme: dark) {
   :root:not(.light) {
     --ios-label: rgba(255, 255, 255, 0.92);
     --ios-secondary: rgba(235, 235, 245, 0.6);
     --ios-separator: rgba(255, 255, 255, 0.12);
+    --ios-settings-surface: #27272a;
+    --ios-settings-text: #f4f4f5;
+    --ios-settings-muted: #a1a1aa;
+    --ios-settings-border: #52525b;
+    --ios-settings-subtle: #3f3f46;
+    --ios-settings-input: #18181b;
   }
 }
 
@@ -357,60 +376,546 @@ li.service .w-3.h-3.opacity-50 svg {
   height: 100% !important;
 }
 
-/* 日历设置入口：与基金卡片标题行保持紧凑，不改变基金内容字号和间距 */
-.ios-fund-calendar-toggle,
-.ios-fund-calendar-save,
-.ios-fund-calendar-clear {
-  border: 1px solid var(--ios-separator);
-  border-radius: 0.35rem;
+/* 独立设置入口；弹层挂在 body，避免被 main 的尺寸或 overflow 裁切。 */
+.ios-settings {
+  order: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 2rem;
+  width: 2rem;
+  height: 2rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.ios-settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.ios-settings-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
   color: var(--ios-label);
   background: transparent;
   font: inherit;
-  font-size: 0.72rem;
-  padding: 0.18rem 0.45rem;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
 }
 
-.ios-fund-calendar-toggle:hover,
-.ios-fund-calendar-save:hover,
-.ios-fund-calendar-clear:hover {
-  background: var(--ios-separator);
+.ios-settings-toggle:hover,
+.ios-settings-toggle[aria-expanded="true"] {
+  background: rgba(120, 120, 128, 0.16);
+}
+
+#style {
+  position: relative;
+}
+
+.ios-settings-host {
+  position: relative;
+}
+
+/* layer 挂在页面主内容层，设置面板可占用接近半屏，不受工具栏尺寸限制。 */
+.ios-settings-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 100vw;
+  height: 100dvh;
+  padding: clamp(1rem, 4vw, 3rem);
+  overflow: auto;
+  isolation: isolate;
+  pointer-events: none;
+}
+
+.ios-settings-layer[data-phase="opening"],
+.ios-settings-layer[data-phase="open"] {
+  pointer-events: auto;
+}
+
+.ios-settings-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: rgb(9 9 11 / 0.2);
+  opacity: 0;
+  cursor: default;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: ios-settings-backdrop-in 200ms ease-out forwards;
+}
+
+.ios-settings-layer[data-phase="closing"] .ios-settings-backdrop {
+  animation: ios-settings-backdrop-out 200ms ease-in forwards;
+  pointer-events: none;
+}
+
+.ios-settings-dialog {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  width: min(52rem, calc(100% - 2rem));
+  min-height: min(34rem, calc(100% - 2rem));
+  max-width: calc(100% - 2rem);
+  max-height: calc(100% - 2rem);
+  overflow: auto;
+  padding: clamp(1.25rem, 2.5vw, 2rem);
+  border: 1px solid var(--ios-settings-border);
+  border-radius: 1.25rem;
+  color: var(--ios-settings-text);
+  background: var(--ios-settings-surface);
+  box-shadow: 0 1.25rem 3rem rgb(0 0 0 / 0.28);
+  will-change: transform, opacity;
+}
+
+.ios-settings-layer[data-phase="closing"] .ios-settings-dialog {
+  pointer-events: none;
+  animation: ios-settings-dialog-out 220ms ease-in forwards;
+}
+
+.ios-settings-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.4rem;
+}
+
+.ios-settings-dialog-title {
+  margin: 0;
+  color: var(--ios-settings-text);
+  font-size: clamp(1.15rem, 1.8vw, 1.5rem);
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.ios-settings-dialog-description {
+  margin: 0.4rem 0 0;
+  color: var(--ios-settings-muted);
+  font-size: clamp(0.8rem, 1.2vw, 0.95rem);
+  line-height: 1.45;
+}
+
+.ios-settings-close {
+  flex: 0 0 1.5rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  color: var(--ios-settings-muted);
+  background: transparent;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ios-settings-close:hover {
+  color: var(--ios-settings-text);
+  background: var(--ios-settings-subtle);
+}
+
+.ios-settings-section-title {
+  margin-bottom: 0.25rem;
+  color: var(--ios-settings-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.ios-settings-account {
+  margin-bottom: 0.8rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--ios-settings-border);
+}
+
+
+
+.ios-settings-drag-handle {
+  width: 2.25rem;
+  height: 0.25rem;
+  margin: -0.35rem auto 0.65rem;
+  border-radius: 999px;
+  background: var(--ios-settings-border);
+  cursor: grab;
+  touch-action: none;
+}
+
+.ios-settings-drag-handle:active {
+  cursor: grabbing;
+}
+
+@keyframes ios-settings-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes ios-settings-backdrop-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes ios-settings-dialog-out {
+  from {
+    transform: translate3d(0, var(--ios-settings-exit-y, 0px), 0) scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: translate3d(0, 120px, 0) scale(1);
+    opacity: 0;
+  }
+}
+
+.ios-settings-layout {
+  display: grid;
+  grid-template-columns: 8rem minmax(0, 1fr);
+  min-height: 21rem;
+  gap: 1.5rem;
+}
+
+.ios-settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-right: 1rem;
+  border-right: 1px solid var(--ios-settings-border);
+}
+
+.ios-settings-tab {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0.55rem 0.75rem;
+  border: 0;
+  border-radius: 0.65rem;
+  color: var(--ios-settings-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.ios-settings-tab:hover,
+.ios-settings-tab[aria-selected="true"] {
+  color: var(--ios-settings-text);
+  background: var(--ios-settings-subtle);
+}
+
+.ios-settings-tab[aria-selected="true"] {
+  font-weight: 650;
+}
+
+.ios-settings-tab:active {
+  transform: scale(0.98);
+}
+
+.ios-settings-content {
+  min-width: 0;
+}
+
+.ios-settings-panel[hidden] {
+  display: none;
+}
+
+.ios-settings-panel-description {
+  margin: 0 0 1.25rem;
+  color: var(--ios-settings-muted);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.ios-settings-user {
+  margin: 0.35rem 0 0.85rem;
+  color: var(--ios-settings-text);
+  font-size: 1.35rem;
+  font-weight: 650;
+}
+
+.ios-settings-account-message {
+  margin-top: 0.75rem;
+  color: var(--ios-settings-muted);
+  font-size: 0.75rem;
+}
+
+.ios-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.8rem;
+}
+
+.ios-stateful-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 6.5rem;
+  height: 2.75rem;
+  padding: 0 1rem;
+  border: 0;
+  border-radius: 0.65rem;
+  color: #fff;
+  background: #18181b;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: min-width 0.28s cubic-bezier(0.22, 1, 0.36, 1), transform 0.15s ease, opacity 0.15s ease;
+}
+
+.ios-stateful-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: #27272a;
+}
+
+.ios-stateful-button:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+.ios-stateful-button:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.ios-stateful-button[data-state="loading"] {
+  min-width: 7rem;
+}
+
+.ios-stateful-button[data-state="done"] {
+  min-width: 6rem;
+}
+
+.ios-stateful-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-width: 0;
+  animation: ios-stateful-pop 180ms ease-out both;
+}
+
+.ios-stateful-spinner {
+  display: none;
+  width: 1rem;
+  height: 1rem;
+  box-sizing: border-box;
+  border: 2px solid rgb(255 255 255 / 0.25);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: ios-stateful-spin 0.8s linear infinite;
+}
+
+.ios-stateful-check {
+  display: none;
+  width: 1rem;
+  height: 1rem;
+  overflow: visible;
+}
+
+.ios-stateful-check path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: ios-stateful-check 0.5s ease-out forwards;
+}
+
+.ios-stateful-button[data-state="loading"] .ios-stateful-label {
+  display: none;
+}
+
+.ios-stateful-button[data-state="done"] .ios-stateful-label {
+  display: inline;
+}
+
+.ios-stateful-button[data-state="loading"] .ios-stateful-spinner {
+  display: block;
+}
+
+.ios-stateful-button[data-state="done"] .ios-stateful-check {
+  display: block;
+}
+
+.ios-fund-calendar-save,
+.ios-fund-calendar-clear,
+.ios-settings-logout {
+  min-width: 5.25rem;
+  height: 2.5rem;
+  padding: 0 0.85rem;
+}
+
+.ios-fund-calendar-clear {
+  color: var(--ios-settings-text);
+  background: var(--ios-settings-subtle);
+  border: 1px solid var(--ios-settings-border);
+}
+
+.ios-fund-calendar-clear:hover:not(:disabled) {
+  background: var(--ios-settings-border);
+}
+
+.ios-settings-logout {
+  color: #fff;
+  background: #b42318;
+}
+
+.ios-settings-logout:hover:not(:disabled) {
+  background: #c53030;
+}
+
+@keyframes ios-stateful-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes ios-stateful-check {
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes ios-stateful-pop {
+  from { opacity: 0; transform: translateY(8px) scale(0.6); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.ios-fund-calendar-toggle {
+  border: 1px solid var(--ios-settings-border);
+  border-radius: 0.4rem;
+  color: var(--ios-settings-text);
+  background: var(--ios-settings-surface);
+  font: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
 }
 
 .ios-fund-calendar-settings {
-  padding: 0.35rem 0 0.55rem;
+  padding: 0.1rem 0 0.55rem;
 }
 
 .ios-fund-calendar-form {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.4rem;
   align-items: center;
 }
 
 .ios-fund-calendar-input {
+  box-sizing: border-box;
+  width: 100%;
   min-width: 0;
   flex: 1 1 auto;
-  padding: 0.32rem 0.45rem;
-  border: 1px solid var(--ios-separator);
-  border-radius: 0.35rem;
-  background: transparent;
-  color: var(--ios-label);
+  padding: 0.7rem 0.75rem;
+  border: 1px solid var(--ios-settings-border);
+  border-radius: 0.4rem;
+  color: var(--ios-settings-text);
+  background: var(--ios-settings-input);
   font: inherit;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
 }
 
 .ios-fund-calendar-message {
-  margin-top: 0.25rem;
-  color: var(--ios-secondary);
-  font-size: 0.68rem;
+  margin-top: 0.3rem;
+  color: var(--ios-settings-muted);
+  font-size: 0.67rem;
+}
+
+
+
+.ios-settings-dialog button:focus-visible,
+.ios-settings-dialog input:focus-visible,
+.ios-settings-dialog a:focus-visible,
+.ios-settings-toggle:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .ios-settings-dialog {
+    color: var(--ios-settings-text);
+    background: var(--ios-settings-surface);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ios-settings-backdrop,
+  .ios-settings-dialog,
+  .ios-stateful-content,
+  .ios-stateful-spinner,
+  .ios-stateful-check path {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .ios-settings-dialog {
+    width: calc(100% - 1.5rem);
+    min-height: min(62vh, 40rem);
+    padding: 1.25rem;
+  }
+  .ios-settings-layout {
+    grid-template-columns: 7rem minmax(0, 1fr);
+    gap: 1rem;
+  }
+  .ios-settings-nav {
+    padding-right: 0.7rem;
+  }
 }
 
 @media (max-width: 640px) {
-  .ios-fund-calendar-form {
-    flex-wrap: wrap;
+  .ios-settings-layer {
+    padding: 0.75rem;
   }
-
-  .ios-fund-calendar-input {
-    flex-basis: 100%;
+  .ios-settings-dialog {
+    width: calc(100% - 1rem);
+  }
+  .ios-settings-layout {
+    display: block;
+    min-height: 0;
+  }
+  .ios-settings-nav {
+    display: flex;
+    flex-direction: row;
+    gap: 0.35rem;
+    margin-bottom: 1rem;
+    padding: 0 0 0.55rem;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--ios-settings-border);
+  }
+  .ios-settings-tab {
+    width: auto;
+    min-width: 5rem;
+    min-height: 2.25rem;
+    text-align: center;
+  }
+  .ios-settings-actions {
+    align-items: stretch;
+  }
+  .ios-settings-actions .ios-stateful-button {
+    flex: 1 1 auto;
   }
 }
 

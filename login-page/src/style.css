@@ -1,0 +1,90 @@
+/* 注册为可动画的自定义属性：--on 一变，所有依赖它的颜色/透明度都会平滑过渡 */
+@property --on {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+@property --shade-hue {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 38;
+}
+
+:root {
+  --on: 0;
+  --shade-hue: 38;
+
+  --bg: #0b0f16;
+  --ink: #eaedf3;
+  --ink-dim: #7d879c;
+  --line: #1c2433;
+  --danger: #ff7a6b;
+
+  --font-body: 'Noto Sans SC', ui-rounded, system-ui, sans-serif;
+  --font-display: 'Noto Serif SC', 'Songti SC', serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --lamp-light: oklch(83% 0.17 var(--shade-hue));
+  --lamp-glow:  oklch(72% 0.19 var(--shade-hue));
+  --lamp-deep:  oklch(48% 0.13 var(--shade-hue));
+
+  --accent:      color-mix(in oklab, var(--lamp-light) calc(var(--on) * 100%), #38414f);
+  --accent-glow: color-mix(in oklab, var(--lamp-glow)  calc(var(--on) * 100%), #232b38);
+  --accent-deep: color-mix(in oklab, var(--lamp-deep)  calc(var(--on) * 100%), #1b212c);
+  --card-bg:     color-mix(in oklab, var(--accent-deep) 20%, #0d1320);
+}
+
+html {
+  transition: --on 0.9s ease, --shade-hue 1.4s ease;
+}
+/* 打盹：光慢慢暗下去 */
+html.dozing {
+  transition: --on 3.2s ease, --shade-hue 1.4s ease;
+}
+/* 灯泡烧掉：光瞬间熄灭 */
+html.snap {
+  transition: --on 0.08s ease-out, --shade-hue 1.4s ease;
+}
+/* 被气到：灯色快速转红再缓回 */
+html.flash {
+  transition: --on 0.9s ease, --shade-hue 0.35s ease;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  color: var(--ink);
+  font-family: var(--font-body);
+  overflow-x: hidden;
+}
+
+body {
+  background:
+    radial-gradient(ellipse 62% 55% at 50% 34%,
+      color-mix(in oklab, var(--accent-glow) calc(var(--on) * 20%), transparent) 0%,
+      transparent 72%),
+    radial-gradient(circle at 50% 125%, #070b11 0%, var(--bg) 62%);
+}
+
+#app { min-height: 100vh; }
+
+::selection {
+  background: color-mix(in oklab, var(--accent) 40%, transparent);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

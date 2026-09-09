@@ -10,31 +10,42 @@ echo '{"version":4,"routes":{},"dynamicRoutes":{},"notFoundRoutes":[],"preview":
 # Patch next-i18next.config.js to add zh-Hans locale support
 sed -i 's/locales: \["en"\]/locales: ["en","zh-Hans"]/' /app/next-i18next.config.js
 
-# Homepage fetches iCal server-side. Forward the identity injected by Caddy
-# so ical-proxy can select the calendar belonging to the authenticated user.
-# Fail loudly after an image upgrade if the known calendar proxy call changes;
-# silently falling back would expose the wrong shared calendar.
-patched=0
-while IFS= read -r file; do
-  [ -n "$file" ] || continue
-  node - "$file" <<'NODE'
-const fs = require("fs");
-const file = process.argv[2];
-const source = fs.readFileSync(file, "utf8");
-const call = /const\s+\[status,\s*contentType,\s*data\]\s*=\s*await\s+httpProxy\(integration\.url,\s*options\);/;
-const replacement = 'options.headers = { ...(options.headers || {}), "X-Authenticated-User": req.headers["x-authenticated-user"] }; const [status, contentType, data] = await httpProxy(integration.url, options);';
-if (!call.test(source)) process.exit(2);
-fs.writeFileSync(file, source.replace(call, replacement));
-NODE
-  patched=$((patched + 1))
-done <<EOF
-$(grep -rl --include='*.js' 'httpProxy(integration.url' /app/.next/server 2>/dev/null || true)
-EOF
-if [ "$patched" -eq 0 ]; then
-  echo "Homepage calendar proxy patch target not found; refusing to start" >&2
+# Patch Homepage's current calendar proxy handler so native iCal widgets
+# forward the authenticated user to the per-user iCal proxy. The handler's
+# first parameter is Next's request object; do not use lexical `arguments`.
+candidates=$(find /app/.next/server -type f -name '*.js' -exec grep -l 'calendarProxyHandler' {} + 2>/dev/null || true)
+candidate_count=$(printf '%s\n' "$candidates" | sed '/^$/d' | wc -l)
+if [ "$candidate_count" -ne 1 ]; then
+  echo "Expected exactly one Homepage calendar proxy bundle, found $candidate_count; refusing to start" >&2
   exit 1
 fi
-echo "Patched calendar proxy identity forwarding in $patched bundle(s)"
+file=$candidates
+if node - "$file" <<'NODE'
+const fs = require("fs");
+const file = process.argv[2];
+let source = fs.readFileSync(file, "utf8");
+const signature = 'async function i(a,b){let{group:c,service:d,endpoint:f,index:h}=a.query;';
+const signatureReplacement = 'async function i(req,b){let{group:c,service:d,endpoint:f,index:h}=req.query;';
+const current = 'let a={};i.url?.includes("outlook")&&(a.headers={"User-Agent":"gethomepage/v1.13.2"});let[c,d,e]=await (0,g.d1)(i.url,a);';
+const replacement = 'let p={};req.headers?.["x-authenticated-user"]&&(p.headers={"X-Authenticated-User":req.headers["x-authenticated-user"]}),i.url?.includes("outlook")&&(p.headers={...(p.headers||{}),"User-Agent":"gethomepage/v1.13.2"});let[c,d,e]=await (0,g.d1)(i.url,p);';
+const patchedCall = 'req.headers?.["x-authenticated-user"]';
+if (source.includes(patchedCall)) {
+  if (!source.includes(signatureReplacement)) process.exit(3);
+  process.stdout.write("calendar identity patch already present\n");
+} else {
+  if ((source.split(signature).length - 1) !== 1 || (source.split(current).length - 1) !== 1) process.exit(2);
+  source = source.replace(signature, signatureReplacement).replace(current, replacement);
+  if (!source.includes(signatureReplacement) || !source.includes(patchedCall)) process.exit(3);
+  fs.writeFileSync(file, source);
+  process.stdout.write("calendar identity patch applied\n");
+}
+NODE
+then
+  echo "Verified calendar identity forwarding in $file"
+else
+  echo "Homepage calendar proxy patch failed verification; refusing to start" >&2
+  exit 1
+fi
 
 # Execute the original entrypoint
 exec /usr/local/bin/docker-entrypoint.sh "$@"

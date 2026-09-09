@@ -13,7 +13,7 @@
   │
   ├─ 生产：https://kelelega.dpdns.org/*
   │     │
-  │   Caddy（多用户 Basic Auth）
+  │   Caddy + auth-service（多用户会话认证）
   │     ├─ /calendar/*      → ical-proxy:8089 + X-Authenticated-User
   │     ├─ /fund-monitor/*  → fund-monitor:8090 + X-Authenticated-User
   │     └─ 其余              → homepage:3000 + X-Authenticated-User
@@ -23,7 +23,7 @@
         homepage:3000 直接对外，fund-monitor 额外映射到宿主机 8090，使用 local 用户
 ```
 
-生产环境的认证用户名只由 Caddy 注入，浏览器自行提交的同名 header 不应被信任。基金服务按 `fund-monitor/data/users/<用户名>/` 分区；iCal 服务按 `ical-proxy/data/users.json` 选择上游并按用户缓存。登录后可在基金卡片的「日历设置」入口保存或清除当前用户地址，API 路径为 `/calendar/api/calendar`。
+生产环境的认证用户名只由 Caddy 注入，浏览器自行提交的同名 header 不应被信任。基金服务按 `fund-monitor/data/users/<用户名>/` 分区；iCal 服务按 `ical-proxy/data/users.json` 选择上游并按用户缓存。登录后可在设置入口的「日历」板块保存或清除当前用户地址，在「账号」板块查看当前用户名并退出登录；日历 API 路径为 `/calendar/api/calendar`，账号 API 为 `/auth/me` 和 `/auth/logout`。退出登录会清除当前浏览器的 session cookie；由于 session 是无服务器状态签名令牌，复制出的旧令牌仍可在 TTL 内有效。
 
 homepage 本身是社区镜像（gethomepage），项目自身代码只有：
 - `config/custom.js` / `config/custom.css` —— 注入到 homepage 页面里的自定义 UI（基金卡片、农历等）

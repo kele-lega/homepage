@@ -2,6 +2,10 @@
 # For configuration options and examples, please see:
 # https://gethomepage.dev/configs/info-widgets/
 
+- glances:
+    url: http://glances:61208
+    version: 4
+
 - openmeteo:
     label: 坪山
     latitude: 22.72

@@ -607,9 +607,22 @@
   }
 
   var state = { funds: [], lastRefresh: null, lastError: null, netError: null, loaded: false };
-  var calendar = { open: false, loaded: false, configured: false, url: "", draft: "", message: "", busy: false };
+  var calendar = { loaded: false, configured: false, url: "", draft: "", message: "", busy: false, operation: 0, request: 0 };
+  var account = { loaded: false, user: "", message: "", busy: false, operation: 0, request: 0 };
+  var accountSession = 0;
   var draft = ""; // 输入框内容，React 重渲染冲掉卡片后不丢
   var expanded = true; // 页面生命周期内保留展开状态，完整刷新后恢复展开
+  var settingsOpen = false;
+  var settingsPhase = "closed";
+  var settingsSection = "calendar";
+  var settingsMounted = null;
+  var settingsLayer = null;
+  var settingsDialog = null;
+  var settingsRefs = null;
+  var settingsOpener = null;
+  var settingsCloseTimer = null;
+  var settingsAnimationCancel = null;
+  var settingsDrag = null;
   var timer = null;
   var mounted = null;
 
@@ -640,112 +653,651 @@
     });
   }
 
+  function createStatefulButton(label, className) {
+    var button = el("button", "ios-stateful-button " + (className || ""));
+    button.type = "button";
+    button.dataset.state = "idle";
+    var content = el("span", "ios-stateful-content");
+    var text = el("span", "ios-stateful-label", label);
+    var spinner = el("span", "ios-stateful-spinner");
+    spinner.setAttribute("aria-hidden", "true");
+    var check = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    check.setAttribute("class", "ios-stateful-check");
+    check.setAttribute("viewBox", "0 0 16 16");
+    check.setAttribute("aria-hidden", "true");
+    var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", "M 3 8.5 L 6.5 12 L 13 4.5");
+    path.setAttribute("pathLength", "1");
+    check.appendChild(path);
+    content.appendChild(text);
+    content.appendChild(spinner);
+    content.appendChild(check);
+    button.appendChild(content);
+
+    var timers = [];
+    var sequence = 0;
+    var running = false;
+    function clearTimers() {
+      timers.forEach(function (timerId) { clearTimeout(timerId); });
+      timers = [];
+    }
+    function state(name) {
+      button.dataset.state = name;
+      button.disabled = name === "loading" || name === "done";
+      button.setAttribute("aria-busy", String(name === "loading"));
+      text.textContent = name === "done" ? "完成" : label;
+      text.hidden = name === "loading";
+      spinner.hidden = name !== "loading";
+      check.hidden = name !== "done";
+    }
+    function delay(ms, current) {
+      return new Promise(function (resolve) {
+        var timerId = setTimeout(function () {
+          timers = timers.filter(function (value) { return value !== timerId; });
+          resolve(current === sequence);
+        }, ms);
+        timers.push(timerId);
+      });
+    }
+    button.run = function (action, onError, onDone, onReady) {
+      if (running) return Promise.resolve(false);
+      running = true;
+      var current = ++sequence;
+      clearTimers();
+      state("loading");
+      var started = Date.now();
+      return Promise.resolve().then(action).then(function (result) {
+        return delay(Math.max(0, 1200 - (Date.now() - started)), current).then(function (valid) {
+          if (!valid) return false;
+          state("done");
+          if (onReady) onReady(result);
+          return delay(button.doneDuration || 1500, current).then(function (stillValid) {
+            if (!stillValid) return false;
+            state("idle");
+            running = false;
+            if (onDone) onDone(result);
+            return result;
+          });
+        });
+      }).catch(function (error) {
+        if (current === sequence) {
+          clearTimers();
+          state("idle");
+          running = false;
+          if (onError) onError(error);
+        }
+        return false;
+      });
+    };
+    button.doneDuration = 1500;
+    button.reset = function () {
+      sequence += 1;
+      running = false;
+      clearTimers();
+      state("idle");
+    };
+    button.dispose = function () {
+      sequence += 1;
+      running = false;
+      clearTimers();
+    };
+    state("idle");
+    return button;
+  }
+
   function loadCalendar() {
     calendar.message = "";
+    var request = ++calendar.request;
+    var session = accountSession;
     return calendarApi()
       .then(function (data) {
+        if (request !== calendar.request || session !== accountSession) return;
         calendar.configured = data.configured === true;
         calendar.url = typeof data.url === "string" ? data.url : "";
         calendar.draft = calendar.url;
         calendar.loaded = true;
-        render();
+        renderSettings();
       })
       .catch(function (err) {
+        if (request !== calendar.request || session !== accountSession) return;
         calendar.loaded = true;
         calendar.message = "读取日历设置失败：" + err.message;
-        render();
+        renderSettings();
       });
   }
 
-  function saveCalendar(url) {
+  function loadAccount() {
+    account.message = "";
+    var request = ++account.request;
+    var session = accountSession;
+    return fetch("/auth/me", { cache: "no-store", credentials: "same-origin" })
+      .then(function (resp) {
+        return resp.json().then(function (body) {
+          if (!resp.ok) throw new Error((body && body.error) || "HTTP " + resp.status);
+          return body;
+        });
+      })
+      .then(function (data) {
+        if (request !== account.request || session !== accountSession) return;
+        account.user = typeof data.user === "string" ? data.user : "";
+        account.loaded = true;
+        renderSettings();
+      })
+      .catch(function (err) {
+        if (request !== account.request || session !== accountSession) return;
+        account.loaded = true;
+        account.message = "读取账号信息失败：" + err.message;
+        renderSettings();
+      });
+  }
+
+  function beginCalendarOperation(message) {
+    if (calendar.busy) return null;
     calendar.busy = true;
-    calendar.message = "保存中…";
-    render();
+    calendar.message = message;
+    var operation = ++calendar.operation;
+    renderSettings();
+    return operation;
+  }
+
+  function finishCalendarOperation(operation, errorMessage) {
+    if (operation !== calendar.operation) return;
+    calendar.busy = false;
+    if (errorMessage) calendar.message = errorMessage;
+    renderSettings();
+  }
+
+  function saveCalendar(url) {
+    var operation = beginCalendarOperation("保存中…");
+    if (operation === null) return Promise.reject(new Error("已有日历操作正在进行"));
     return calendarApi({
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url: url }),
-    })
-      .then(function (data) {
-        calendar.configured = data.configured === true;
-        calendar.url = typeof data.url === "string" ? data.url : "";
-        calendar.draft = calendar.url;
-        calendar.message = "日历地址已保存";
-      })
-      .catch(function (err) {
-        calendar.message = "保存失败：" + err.message;
-      })
-      .then(function () {
-        calendar.busy = false;
-        calendar.loaded = true;
-        render();
-      });
+    }).then(function (data) {
+      if (operation !== calendar.operation) return data;
+      calendar.configured = data.configured === true;
+      calendar.url = typeof data.url === "string" ? data.url : "";
+      calendar.draft = calendar.url;
+      calendar.message = "日历地址已保存";
+      renderSettings();
+      return data;
+    }).catch(function (err) {
+      if (operation === calendar.operation) calendar.message = "保存失败：" + err.message;
+      throw err;
+    });
   }
 
   function clearCalendar() {
-    calendar.busy = true;
-    calendar.message = "清除中…";
-    render();
-    return calendarApi({ method: "DELETE" })
-      .then(function (data) {
-        calendar.configured = data.configured === true;
-        calendar.url = "";
-        calendar.draft = "";
-        calendar.message = "日历地址已清除";
+    var operation = beginCalendarOperation("清除中…");
+    if (operation === null) return Promise.reject(new Error("已有日历操作正在进行"));
+    return calendarApi({ method: "DELETE" }).then(function (data) {
+      if (operation !== calendar.operation) return data;
+      calendar.configured = false;
+      calendar.url = "";
+      calendar.draft = "";
+      calendar.message = "日历地址已清除";
+      renderSettings();
+      return data;
+    }).catch(function (err) {
+      if (operation === calendar.operation) calendar.message = "清除失败：" + err.message;
+      throw err;
+    });
+  }
+
+  function logout() {
+    if (account.busy) return Promise.reject(new Error("退出登录正在进行"));
+    account.busy = true;
+    account.message = "退出登录中…";
+    var operation = ++account.operation;
+    renderSettings();
+    return fetch("/auth/logout", { method: "POST", cache: "no-store", credentials: "same-origin" })
+      .then(function (resp) {
+        return resp.json().then(function (body) {
+          if (!resp.ok) throw new Error((body && body.error) || "HTTP " + resp.status);
+          return body;
+        });
       })
-      .catch(function (err) {
-        calendar.message = "清除失败：" + err.message;
-      })
-      .then(function () {
-        calendar.busy = false;
-        calendar.loaded = true;
-        render();
+      .then(function (body) {
+        account.busy = false;
+        account.loaded = false;
+        account.user = "";
+        account.message = "已退出登录";
+        accountSession += 1;
+        calendar.request += 1;
+        if (operation !== account.operation) return body;
+        renderSettings();
+        return body;
+      }).catch(function (err) {
+        if (operation === account.operation) {
+          account.busy = false;
+          account.message = "退出登录失败：" + err.message;
+          renderSettings();
+        }
+        throw err;
       });
   }
 
   function buildCalendarSettings() {
-    var wrap = el("div", "ios-fund-calendar-settings");
+    var wrap = el("div", "ios-settings-panel ios-settings-calendar-panel");
+    wrap.id = "ios-settings-calendar-panel";
+    wrap.appendChild(el("p", "ios-settings-panel-description", "仅填写公开的 iCalendar 订阅地址，保存后用于当前账号的日历。"));
     var form = el("form", "ios-fund-calendar-form");
     var input = el("input", "ios-fund-calendar-input");
     input.type = "url";
     input.inputMode = "url";
     input.placeholder = "https://…/basic.ics";
-    input.setAttribute("aria-label", "日历订阅地址");
-    input.value = calendar.draft;
-    input.disabled = calendar.busy;
+    input.setAttribute("aria-label", "iCalendar 订阅地址");
     input.addEventListener("input", function () { calendar.draft = input.value; });
-
-    var save = el("button", "ios-fund-calendar-save", "保存");
+    var actions = el("div", "ios-settings-actions");
+    var save = createStatefulButton("保存", "ios-fund-calendar-save");
     save.type = "submit";
-    save.disabled = calendar.busy;
-    var clear = el("button", "ios-fund-calendar-clear", "清除");
-    clear.type = "button";
-    clear.disabled = calendar.busy || !calendar.configured;
-    clear.addEventListener("click", clearCalendar);
-
+    var clear = createStatefulButton("清除", "ios-fund-calendar-clear");
+    clear.addEventListener("click", function () {
+      if (!calendar.configured || calendar.busy) return;
+      var operation = calendar.operation + 1;
+      clear.run(clearCalendar, function (err) {
+        finishCalendarOperation(operation, "清除失败：" + err.message);
+      }, function () {
+        finishCalendarOperation(operation);
+      });
+    });
+    actions.appendChild(save);
+    actions.appendChild(clear);
     form.appendChild(input);
-    form.appendChild(save);
-    form.appendChild(clear);
+    form.appendChild(actions);
     form.addEventListener("submit", function (event) {
       event.preventDefault();
       var value = input.value.trim();
       if (!/^https?:\/\//i.test(value)) {
         calendar.message = "请输入 http 或 https 日历地址";
-        render();
+        syncCalendarSettings();
         return;
       }
-      saveCalendar(value);
+      save.run(function () { return saveCalendar(value); }, function (err) {
+        finishCalendarOperation(calendar.operation, "保存失败：" + err.message);
+      }, function () {
+        finishCalendarOperation(calendar.operation);
+      });
     });
     wrap.appendChild(form);
-    if (!calendar.loaded) {
-      wrap.appendChild(el("div", "ios-fund-calendar-message", "加载中…"));
-    } else if (calendar.message) {
-      wrap.appendChild(el("div", "ios-fund-calendar-message", calendar.message));
-    } else if (calendar.configured) {
-      wrap.appendChild(el("div", "ios-fund-calendar-message", "已配置当前登录用户的日历"));
-    }
-    return wrap;
+    var message = el("div", "ios-fund-calendar-message");
+    message.setAttribute("role", "status");
+    message.setAttribute("aria-live", "polite");
+    wrap.appendChild(message);
+    return { node: wrap, input: input, save: save, clear: clear, message: message };
   }
+
+  function buildAccountSettings() {
+    var wrap = el("div", "ios-settings-panel ios-settings-account-panel");
+    wrap.id = "ios-settings-account-panel";
+    wrap.setAttribute("role", "tabpanel");
+    wrap.appendChild(el("div", "ios-settings-section-title", "当前账号"));
+    var user = el("div", "ios-settings-user", "加载中…");
+    var description = el("p", "ios-settings-panel-description", "退出后需要重新登录才能访问此站点。");
+    var logoutButton = createStatefulButton("退出登录", "ios-settings-logout");
+    var message = el("div", "ios-settings-account-message");
+    message.setAttribute("role", "status");
+    message.setAttribute("aria-live", "polite");
+    logoutButton.addEventListener("click", function () {
+      logoutButton.run(logout, function (err) {
+        account.busy = false;
+        syncAccountSettings();
+        account.message = "退出登录失败：" + err.message;
+        syncAccountSettings();
+      }, null, function () {
+        window.location.replace("/login-v2/");
+      });
+    });
+    wrap.appendChild(user);
+    wrap.appendChild(description);
+    wrap.appendChild(logoutButton);
+    wrap.appendChild(message);
+    return { node: wrap, user: user, logout: logoutButton, message: message };
+  }
+
+  function syncCalendarSettings() {
+    if (!settingsRefs) return;
+    var input = settingsRefs.input;
+    if (document.activeElement !== input && input.value !== calendar.draft) input.value = calendar.draft;
+    input.disabled = calendar.busy;
+    if (settingsRefs.save.dataset.state !== "loading" && settingsRefs.save.dataset.state !== "done") settingsRefs.save.disabled = calendar.busy;
+    if (settingsRefs.clear.dataset.state !== "loading" && settingsRefs.clear.dataset.state !== "done") {
+      settingsRefs.clear.disabled = calendar.busy || !calendar.configured;
+    }
+    if (!calendar.loaded) settingsRefs.message.textContent = "加载中…";
+    else if (calendar.message) settingsRefs.message.textContent = calendar.message;
+    else if (calendar.configured) settingsRefs.message.textContent = "已配置当前登录用户的日历";
+    else settingsRefs.message.textContent = "尚未配置日历";
+  }
+
+  function syncAccountSettings() {
+    if (!settingsRefs || !settingsRefs.accountUser) return;
+    settingsRefs.accountUser.textContent = account.loaded ? (account.user || "未知账号") : "加载中…";
+    if (settingsRefs.logout.dataset.state !== "loading" && settingsRefs.logout.dataset.state !== "done") {
+      settingsRefs.logout.disabled = account.busy;
+    }
+    settingsRefs.accountMessage.textContent = account.message || (account.loaded ? "当前会话有效" : "");
+  }
+
+  function syncSettingsSection() {
+    if (!settingsRefs) return;
+    ["calendar", "account"].forEach(function (section) {
+      var active = settingsSection === section;
+      settingsRefs.tabs[section].setAttribute("aria-selected", String(active));
+      settingsRefs.tabs[section].tabIndex = active ? 0 : -1;
+      settingsRefs.panels[section].hidden = !active;
+    });
+    syncCalendarSettings();
+    syncAccountSettings();
+  }
+
+  function selectSettingsSection(section, focus) {
+    if (section !== "calendar" && section !== "account") return;
+    settingsSection = section;
+    syncSettingsSection();
+    if (focus && settingsRefs) settingsRefs.tabs[section].focus();
+  }
+
+  function buildCalendarDialog() {
+    var dialog = el("section", "ios-settings-dialog");
+    dialog.id = "ios-calendar-settings-dialog";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.setAttribute("aria-labelledby", "ios-settings-title");
+    dialog.setAttribute("aria-describedby", "ios-settings-description");
+    dialog.tabIndex = -1;
+    var handle = el("div", "ios-settings-drag-handle");
+    handle.setAttribute("aria-hidden", "true");
+    dialog.appendChild(handle);
+    var header = el("div", "ios-settings-dialog-header");
+    var copy = el("div");
+    var title = el("h2", "ios-settings-dialog-title", "设置");
+    title.id = "ios-settings-title";
+    var description = el("p", "ios-settings-dialog-description", "管理日历订阅与当前账号");
+    description.id = "ios-settings-description";
+    copy.appendChild(title);
+    copy.appendChild(description);
+    header.appendChild(copy);
+    var close = el("button", "ios-settings-close", "×");
+    close.type = "button";
+    close.setAttribute("aria-label", "关闭设置");
+    close.addEventListener("click", function () { requestCloseSettings("close-button"); });
+    header.appendChild(close);
+    dialog.appendChild(header);
+
+    var layout = el("div", "ios-settings-layout");
+    var nav = el("nav", "ios-settings-nav");
+    nav.setAttribute("role", "tablist");
+    nav.setAttribute("aria-label", "设置分类");
+    var tabs = {};
+    ["calendar", "account"].forEach(function (section) {
+      var tab = el("button", "ios-settings-tab", section === "calendar" ? "日历" : "账号");
+      tab.type = "button";
+      tab.id = "ios-settings-tab-" + section;
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-controls", "ios-settings-" + section + "-panel");
+      tab.addEventListener("click", function () { selectSettingsSection(section, false); });
+      nav.appendChild(tab);
+      tabs[section] = tab;
+    });
+    nav.addEventListener("keydown", function (event) {
+      var keys = ["calendar", "account"];
+      var index = keys.indexOf(settingsSection);
+      if (event.key === "ArrowRight" || event.key === "ArrowDown") index = (index + 1) % keys.length;
+      else if (event.key === "ArrowLeft" || event.key === "ArrowUp") index = (index + keys.length - 1) % keys.length;
+      else if (event.key === "Home") index = 0;
+      else if (event.key === "End") index = keys.length - 1;
+      else return;
+      event.preventDefault();
+      selectSettingsSection(keys[index], true);
+    });
+    layout.appendChild(nav);
+    var content = el("div", "ios-settings-content");
+    var calendarContent = buildCalendarSettings();
+    calendarContent.node.setAttribute("role", "tabpanel");
+    calendarContent.node.setAttribute("aria-labelledby", "ios-settings-tab-calendar");
+    var accountContent = buildAccountSettings();
+    accountContent.node.setAttribute("aria-labelledby", "ios-settings-tab-account");
+    content.appendChild(calendarContent.node);
+    content.appendChild(accountContent.node);
+    layout.appendChild(content);
+    dialog.appendChild(layout);
+    settingsRefs = {
+      input: calendarContent.input,
+      save: calendarContent.save,
+      clear: calendarContent.clear,
+      message: calendarContent.message,
+      logout: accountContent.logout,
+      accountUser: accountContent.user,
+      accountMessage: accountContent.message,
+      tabs: tabs,
+      panels: { calendar: calendarContent.node, account: accountContent.node },
+      buttons: [calendarContent.save, calendarContent.clear, accountContent.logout],
+      handle: handle,
+      close: close,
+    };
+    handle.addEventListener("pointerdown", beginSettingsDrag);
+    syncSettingsSection();
+    return dialog;
+  }
+
+  function settingsReducedMotion() {
+    return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }
+
+  function animateSettingsSpring(node, from, to, done) {
+    if (settingsAnimationCancel) settingsAnimationCancel();
+    if (settingsReducedMotion()) {
+      node.style.transform = "translate3d(0, " + to.y + "px, 0) scale(" + to.scale + ")";
+      node.style.opacity = String(to.opacity);
+      if (done) done();
+      return;
+    }
+    var stiffness = 260;
+    var damping = 17;
+    var value = { y: from.y, scale: from.scale, opacity: from.opacity };
+    var velocity = { y: 0, scale: 0, opacity: 0 };
+    var previous = performance.now();
+    var frame;
+    var cancelled = false;
+    function draw() {
+      node.style.transform = "translate3d(0, " + value.y.toFixed(2) + "px, 0) scale(" + value.scale.toFixed(4) + ")";
+      node.style.opacity = String(Math.max(0, Math.min(1, value.opacity)));
+    }
+    function tick(now) {
+      if (cancelled) return;
+      var dt = Math.min((now - previous) / 1000, 0.032);
+      previous = now;
+      ["y", "scale", "opacity"].forEach(function (key) {
+        var displacement = value[key] - to[key];
+        velocity[key] += (-stiffness * displacement - damping * velocity[key]) * dt;
+        value[key] += velocity[key] * dt;
+      });
+      draw();
+      if (Math.abs(value.y - to.y) < 0.08 && Math.abs(velocity.y) < 0.08 &&
+          Math.abs(value.scale - to.scale) < 0.001 && Math.abs(velocity.scale) < 0.001) {
+        node.style.transform = "translate3d(0, " + to.y + "px, 0) scale(" + to.scale + ")";
+        node.style.opacity = String(to.opacity);
+        settingsAnimationCancel = null;
+        if (done) done();
+        return;
+      }
+      frame = requestAnimationFrame(tick);
+    }
+    settingsAnimationCancel = function () {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+      settingsAnimationCancel = null;
+    };
+    draw();
+    frame = requestAnimationFrame(tick);
+  }
+
+  function focusSettings() {
+    if (!settingsDialog) return;
+    var target = settingsRefs && settingsSection === "calendar" && !settingsRefs.input.disabled
+      ? settingsRefs.input
+      : settingsRefs && settingsSection === "account" ? settingsRefs.logout : settingsRefs && settingsRefs.close;
+    (target || settingsDialog).focus();
+  }
+
+  function focusableSettingsElements() {
+    if (!settingsDialog) return [];
+    return Array.prototype.slice.call(settingsDialog.querySelectorAll(
+      "button:not([disabled]), input:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])"
+    ));
+  }
+
+  function handleSettingsKeydown(event) {
+    if (settingsPhase !== "open" && settingsPhase !== "opening") return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      requestCloseSettings("escape");
+      return;
+    }
+    if (event.key !== "Tab") return;
+    var items = focusableSettingsElements();
+    if (!items.length) {
+      event.preventDefault();
+      settingsDialog.focus();
+      return;
+    }
+    var first = items[0];
+    var last = items[items.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  function finishCloseSettings() {
+    if (settingsPhase !== "closing") return;
+    if (settingsCloseTimer) clearTimeout(settingsCloseTimer);
+    settingsCloseTimer = null;
+    if (settingsAnimationCancel) settingsAnimationCancel();
+    if (settingsRefs && settingsRefs.buttons) settingsRefs.buttons.forEach(function (button) { button.dispose(); });
+    if (settingsLayer) settingsLayer.remove();
+    settingsLayer = null;
+    settingsDialog = null;
+    settingsRefs = null;
+    settingsPhase = "closed";
+    var opener = settingsOpener;
+    settingsOpener = null;
+    settingsDrag = null;
+    if (opener && document.body.contains(opener)) opener.focus();
+  }
+
+  function requestCloseSettings(reason) {
+    if (settingsPhase === "closed" || settingsPhase === "closing") return;
+    settingsOpen = false;
+    settingsPhase = "closing";
+    syncSettingsToggle();
+    if (settingsAnimationCancel) settingsAnimationCancel();
+    if (!settingsLayer || !settingsDialog) {
+      finishCloseSettings();
+      return;
+    }
+    var startOffset = settingsDrag ? settingsDrag.offset : 0;
+    settingsDialog.style.setProperty("--ios-settings-exit-y", String(startOffset) + "px");
+    settingsDrag = null;
+    settingsLayer.setAttribute("data-phase", "closing");
+    settingsDialog.addEventListener("animationend", finishCloseSettings, { once: true });
+    settingsCloseTimer = setTimeout(finishCloseSettings, settingsReducedMotion() ? 20 : 240);
+  }
+
+  function openSettings(opener) {
+    if (settingsPhase === "opening" || settingsPhase === "open") return;
+    if (settingsCloseTimer) clearTimeout(settingsCloseTimer);
+    settingsCloseTimer = null;
+    settingsOpener = opener;
+    settingsOpen = true;
+    settingsPhase = "opening";
+    mountSettingsLayer();
+    if (!settingsLayer || !settingsDialog) {
+      settingsPhase = "closed";
+      settingsOpen = false;
+      syncSettingsToggle();
+      return;
+    }
+    syncSettingsToggle();
+    syncSettingsSection();
+    settingsLayer.setAttribute("data-phase", "opening");
+    animateSettingsSpring(settingsDialog, { y: 40, scale: 0.6, opacity: 0 }, { y: 0, scale: 1, opacity: 1 }, function () {
+      if (settingsPhase === "opening") settingsPhase = "open";
+    });
+    window.setTimeout(focusSettings, 0);
+    if (!calendar.loaded) loadCalendar();
+    if (!account.loaded) loadAccount();
+  }
+
+  function beginSettingsDrag(event) {
+    if (settingsPhase !== "open" || event.button !== undefined && event.button !== 0) return;
+    settingsDrag = { pointerId: event.pointerId, startY: event.clientY, offset: 0 };
+    settingsRefs.handle.setPointerCapture(event.pointerId);
+    if (settingsAnimationCancel) settingsAnimationCancel();
+    function move(moveEvent) {
+      if (!settingsDrag || moveEvent.pointerId !== settingsDrag.pointerId) return;
+      settingsDrag.offset = Math.max(0, moveEvent.clientY - settingsDrag.startY);
+      settingsDialog.style.transform = "translate3d(0, " + settingsDrag.offset + "px, 0) scale(1)";
+      settingsDialog.style.opacity = String(Math.max(0.65, 1 - settingsDrag.offset / 360));
+    }
+    function end(endEvent) {
+      if (!settingsDrag || endEvent.pointerId !== settingsDrag.pointerId) return;
+      settingsRefs.handle.releasePointerCapture(endEvent.pointerId);
+      var offset = settingsDrag.offset;
+      settingsRefs.handle.removeEventListener("pointermove", move);
+      settingsRefs.handle.removeEventListener("pointerup", end);
+      settingsRefs.handle.removeEventListener("pointercancel", end);
+      if (offset > 100) {
+        requestCloseSettings("drag");
+      } else {
+        settingsDrag = null;
+        animateSettingsSpring(settingsDialog, { y: offset, scale: 1, opacity: 1 }, { y: 0, scale: 1, opacity: 1 });
+      }
+    }
+    settingsRefs.handle.addEventListener("pointermove", move);
+    settingsRefs.handle.addEventListener("pointerup", end);
+    settingsRefs.handle.addEventListener("pointercancel", end);
+  }
+
+  function syncSettingsToggle() {
+    if (!settingsMounted) return;
+    var toggle = settingsMounted.querySelector(".ios-settings-toggle");
+    if (!toggle) return;
+    var open = settingsOpen && settingsPhase !== "closed";
+    toggle.setAttribute("aria-label", open ? "收起设置" : "打开设置");
+    toggle.title = open ? "收起设置" : "打开设置";
+    toggle.setAttribute("aria-expanded", String(open));
+  }
+
+  function mountSettingsLayer() {
+    if (settingsLayer && document.body.contains(settingsLayer)) return;
+    var point = settingsPoint();
+    if (!point) return;
+    settingsLayer = el("div", "ios-settings-layer");
+    settingsLayer.setAttribute("data-phase", "opening");
+    var backdrop = el("button", "ios-settings-backdrop");
+    backdrop.type = "button";
+    backdrop.tabIndex = -1;
+    backdrop.setAttribute("aria-label", "关闭日历设置");
+    backdrop.addEventListener("click", function () { requestCloseSettings("backdrop"); });
+    settingsDialog = buildCalendarDialog();
+    settingsLayer.appendChild(backdrop);
+    settingsLayer.appendChild(settingsDialog);
+    document.body.appendChild(settingsLayer);
+  }
+
+  function renderSettings() {
+    syncSettingsToggle();
+    if (settingsPhase !== "closed") {
+      syncSettingsSection();
+    }
+  }
+
   function fmtNav(value) {
     return typeof value === "number" ? value.toFixed(4) : "--";
   }
@@ -755,7 +1307,7 @@
     return (value > 0 ? "+" : "") + value.toFixed(2) + "%";
   }
 
-  // 涨绿跌红：跟随 A 股习惯，与 CSS 里的 .up/.down 对应
+  // 涨绿跌红：跟随基金市场习惯
   function trendClass(value) {
     if (typeof value !== "number" || value === 0) return "flat";
     return value > 0 ? "up" : "down";
@@ -909,15 +1461,6 @@
       status.textContent = "更新 " + shortTime(state.lastRefresh);
     }
     right.appendChild(status);
-    var calendarToggle = el("button", "ios-fund-calendar-toggle", calendar.open ? "关闭日历设置" : "日历设置");
-    calendarToggle.type = "button";
-    calendarToggle.setAttribute("aria-expanded", String(calendar.open));
-    calendarToggle.addEventListener("click", function () {
-      calendar.open = !calendar.open;
-      render();
-      if (calendar.open && !calendar.loaded) loadCalendar();
-    });
-    right.appendChild(calendarToggle);
     var detailLink = el("a", "ios-fund-detail", "详细查看 ›");
     detailLink.href = "https://fund.cc.cd/";
     detailLink.target = "_blank";
@@ -925,8 +1468,6 @@
     right.appendChild(detailLink);
     head.appendChild(right);
     mounted.appendChild(head);
-
-    if (calendar.open) mounted.appendChild(buildCalendarSettings());
 
     var body = el("div", "ios-fund-body");
     body.id = "ios-fund-body";
@@ -995,12 +1536,61 @@
     return null;
   }
 
+  function settingsPoint() {
+    var toolbar = document.getElementById("style")
+      || document.getElementById("information-widgets-right")
+      || document.getElementById("inner_wrapper");
+    if (!toolbar) return null;
+    return { parent: toolbar, host: document.body };
+  }
+
+  function styleSettings() {
+    if (!settingsMounted) return;
+    settingsMounted.style.cssText = "order:10;display:flex;align-items:center;justify-content:center;flex:0 0 2rem;width:2rem;height:2rem;margin:0;padding:0;border:0;background:transparent;";
+    var button = settingsMounted.querySelector(".ios-settings-toggle");
+    if (button) {
+      button.style.cssText = "display:inline-flex;align-items:center;justify-content:center;width:2rem;height:2rem;padding:0;border:0;border-radius:999px;color:var(--ios-label);background:transparent;font:inherit;font-size:1.25rem;line-height:1;cursor:pointer;";
+    }
+  }
+
+  function mountSettings() {
+    var point = settingsPoint();
+    if (!point) return false;
+    document.querySelectorAll(".ios-settings").forEach(function (node) {
+      if (node !== settingsMounted && node.parentElement !== point.parent) node.remove();
+    });
+    if (settingsMounted && document.body.contains(settingsMounted)) {
+      if (settingsMounted.parentElement !== point.parent) point.parent.appendChild(settingsMounted);
+      styleSettings();
+      if (settingsLayer && settingsLayer.parentElement !== document.body) {
+        document.body.appendChild(settingsLayer);
+      }
+      return true;
+    }
+    settingsMounted = el("div", "ios-settings");
+    point.parent.appendChild(settingsMounted);
+    var head = el("div", "ios-settings-head");
+    var toggle = el("button", "ios-settings-toggle", "⚙");
+    toggle.type = "button";
+    toggle.setAttribute("aria-haspopup", "dialog");
+    toggle.setAttribute("aria-controls", "ios-calendar-settings-dialog");
+    toggle.addEventListener("click", function (event) {
+      if (settingsOpen) requestCloseSettings("toggle");
+      else openSettings(event.currentTarget);
+    });
+    head.appendChild(toggle);
+    settingsMounted.appendChild(head);
+    styleSettings();
+    syncSettingsToggle();
+    if (settingsLayer && settingsLayer.parentElement !== document.body) document.body.appendChild(settingsLayer);
+    return true;
+  }
+
   function mount() {
     var point = insertionPoint();
     if (!point) return false;
 
     if (mounted && document.body.contains(mounted)) {
-      // 已挂载：Homepage 重渲染后，确保卡片仍在甲组内容末尾。
       if (mounted.parentElement !== point.parent || mounted.nextElementSibling !== point.before) {
         point.parent.insertBefore(mounted, point.before);
       }
@@ -1011,8 +1601,8 @@
     node.id = CARD_ID;
     point.parent.insertBefore(node, point.before);
     mounted = node;
-    render();      // 先用已有 state 画出来，避免闪空白
-    load();        // 再拉最新数据
+    render();
+    load();
     return true;
   }
 
@@ -1024,10 +1614,12 @@
     inited = true;
 
     mount();
+    mountSettings();
 
     // React 水合/重渲染可能把卡片冲掉，持续守护并按需重新插入
     var obs = new MutationObserver(function () {
       mount();
+      mountSettings();
     });
     obs.observe(document.documentElement, { childList: true, subtree: true });
 
@@ -1038,6 +1630,7 @@
       if (mounted && document.body.contains(mounted)) load();
     }, POLL_MS);
 
+    document.addEventListener("keydown", handleSettingsKeydown);
     document.addEventListener("visibilitychange", function () {
       if (!document.hidden && mounted && document.body.contains(mounted)) load();
     });

@@ -1,6 +1,6 @@
 # 最简部署
 
-同一台 Linux 服务器即可运行。现在支持多个 Basic Auth 账号，每个账号有独立的基金列表、基金缓存和日历。
+同一台 Linux 服务器即可运行。现在支持多个登录账号，每个账号有独立的基金列表、基金缓存和日历。Caddy 负责 HTTPS 入口，认证服务签发会话 Cookie，并把当前用户名传给内部服务。
 
 ## 0. 前置
 
@@ -14,17 +14,16 @@
 git clone https://github.com/kele-lega/homepage.git
 cd homepage
 
-# 生成两个密码哈希
-docker run --rm caddy:2-alpine caddy hash-password --plaintext '管理员密码'
-docker run --rm caddy:2-alpine caddy hash-password --plaintext '第二个密码'
+# 生成 wzj 管理账号的密码哈希（密码只在服务器上输入，不要提交或发到聊天）
+docker run --rm caddy:2-alpine caddy hash-password --plaintext 'wzj 的密码'
 ```
 
 创建 `.env`（该文件已被 `.gitignore` 忽略）：
 
 ```dotenv
 # 多个用户各占一行，用户名和哈希之间用空格分隔
-AUTH_USERS="admin <管理员哈希>
-wzj <wzj 的 Caddy 哈希>"
+AUTH_USERS="kele <kele 的现有哈希>
+wzj <wzj 的新哈希>"
 ICAL_UPSTREAM=<管理员日历订阅地址>
 ```
 

@@ -1,6 +1,6 @@
 # Homepage
 
-个人主页仪表盘，基于 [gethomepage](https://gethomepage.dev) + Caddy 反代 + HTTPS + Basic Auth。
+个人主页仪表盘，基于 [gethomepage](https://gethomepage.dev) + Caddy 反代 + HTTPS + auth-service 会话认证。
 
 ## 域名管理
 

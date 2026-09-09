@@ -1,4 +1,22 @@
 services:
+  login-page:
+    build: ./login-page
+    container_name: login-page
+    expose:
+      - "80"
+    restart: unless-stopped
+
+  auth-service:
+    build: ./auth-service
+    container_name: auth-service
+    expose:
+      - "8080"
+    env_file:
+      - .env
+    environment:
+      SESSION_SECRET: ${SESSION_SECRET}
+    restart: unless-stopped
+
   homepage:
     image: ghcr.io/gethomepage/homepage:latest
     container_name: homepage
@@ -74,7 +92,7 @@ services:
       - FUND_REFRESH_SEC=${FUND_REFRESH_SEC:-60}
     restart: unless-stopped
 
-  # Caddy 反向代理：自动 HTTPS + HTTP Basic Auth
+  # Caddy 反向代理：自动 HTTPS；认证由 auth-service 会话 Cookie 处理
   # 80/443 对外，内部反代到 homepage:3000
   caddy:
     image: caddy:2-alpine
@@ -86,8 +104,8 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    environment:
-      - AUTH_USERS=${AUTH_USERS:?Set AUTH_USERS to one or more 'user hash' lines}
+    env_file:
+      - .env
     restart: unless-stopped
     depends_on:
       - homepage

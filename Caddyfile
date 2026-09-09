@@ -1,26 +1,87 @@
 kelelega.dpdns.org {
-	# 支持多用户：AUTH_USERS 是空格分隔的“用户名 哈希”对，可写多个用户。
-	# Caddy 认证成功后由反代注入可信身份头，后端不接受浏览器自行提交的用户参数。
-	basic_auth {
-		{$AUTH_USERS}
-	}
+	# 明确固定路由顺序：登录页和登录接口必须先于会话校验处理。
+	route {
 
-	# 日历设置 API 与 iCal 读取共用同源路径，Caddy 注入当前登录用户。
-	handle_path /calendar/* {
-		reverse_proxy ical-proxy:8089 {
-			header_up X-Authenticated-User {http.auth.user.id}
+		handle /login {
+			redir /login-v2/ permanent
 		}
-	}
-
-	handle_path /fund-monitor/* {
-		reverse_proxy fund-monitor:8090 {
-			header_up X-Authenticated-User {http.auth.user.id}
+		handle_path /login-v2/* {
+			reverse_proxy login-page:80
 		}
-	}
 
-	handle {
-		reverse_proxy homepage:3000 {
-			header_up X-Authenticated-User {http.auth.user.id}
+		handle /auth/* {
+			reverse_proxy auth-service:8080
+		}
+
+		handle /api/config/custom.css {
+			forward_auth auth-service:8080 {
+				uri /auth/check
+				copy_headers X-Authenticated-User
+			}
+			header {
+				Cache-Control "no-store, no-cache, must-revalidate"
+				Pragma "no-cache"
+			}
+			reverse_proxy homepage:3000
+		}
+
+		handle /api/config/custom.js {
+			forward_auth auth-service:8080 {
+				uri /auth/check
+				copy_headers X-Authenticated-User
+			}
+			header {
+				Cache-Control "no-store, no-cache, must-revalidate"
+				Pragma "no-cache"
+			}
+			reverse_proxy homepage:3000
+		}
+
+		# Homepage API：先校验会话，再把原始 /api/* 请求交给 Homepage。
+		handle /api/* {
+			vars {
+				original_api_uri {http.request.uri}
+			}
+			forward_auth auth-service:8080 {
+				uri /auth/check
+				copy_headers X-Authenticated-User
+			}
+			rewrite * {http.vars.original_api_uri}
+			reverse_proxy homepage:3000 {
+				header_up X-Authenticated-User {http.request.header.X-Authenticated-User}
+			}
+		}
+
+		# 日历设置 API 与 iCal 读取共用同源路径，注入当前登录用户。
+		handle_path /calendar/* {
+			forward_auth auth-service:8080 {
+				uri /auth/check
+				copy_headers X-Authenticated-User
+			}
+			reverse_proxy ical-proxy:8089 {
+				header_up X-Authenticated-User {http.request.header.X-Authenticated-User}
+			}
+		}
+
+		handle_path /fund-monitor/* {
+			forward_auth auth-service:8080 {
+				uri /auth/check
+				copy_headers X-Authenticated-User
+			}
+			reverse_proxy fund-monitor:8090 {
+				header_up X-Authenticated-User {http.request.header.X-Authenticated-User}
+			}
+		}
+
+		handle {
+			forward_auth auth-service:8080 {
+				uri /auth/check
+				copy_headers X-Authenticated-User
+			}
+			reverse_proxy homepage:3000 {
+				header_up X-Authenticated-User {http.request.header.X-Authenticated-User}
+
+			}
 		}
 	}
 }

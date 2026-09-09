@@ -7,23 +7,31 @@
 
 ## 1. .env 文件 — 云端手动创建
 
-`.env` 不在 git 中（`.gitignore` 已忽略），生产部署至少配置 Basic Auth 用户和管理员日历：
+当前部署使用多账号会话认证：现有账号为 `kele`，新增管理账号为 `wzj`。Caddy 提供 HTTPS 入口，认证服务签发 HttpOnly 会话 Cookie；Caddy 校验会话后把 `X-Authenticated-User` 注入内部请求。账号的基金列表、缓存和日历配置按用户名分别隔离。
 
-```bash
-cat > .env << 'EOF'
-AUTH_USERS="admin <管理员哈希>
-wzj <wzj 的 Caddy 哈希>"
+`.env` 不在 git 中（`.gitignore` 已忽略）。每个账号占一行，格式为“用户名 + bcrypt 哈希”：
+
+```dotenv
+AUTH_USERS="kele <kele 的现有 bcrypt 哈希>
+wzj <wzj 的新 bcrypt 哈希>"
 ICAL_UPSTREAM=https://calendar.google.com/calendar/ical/管理员token/public/basic.ics
-EOF
 ```
 
-密码哈希生成：
+不要把真实密码、哈希或日历 token 写入 Git，也不要发到聊天中。推荐在服务器上执行：
 
 ```bash
-docker run --rm caddy:2-alpine caddy hash-password --plaintext '你的密码'
+read -rsp 'wzj password: ' WZJ_PASSWORD; echo
+docker run --rm caddy:2-alpine caddy hash-password --plaintext "$WZJ_PASSWORD"
+unset WZJ_PASSWORD
 ```
 
-多个用户的基金和日历互相隔离。登录后在基金卡片右上角点「日历设置」即可保存或清除当前账号的订阅地址，不需要手工编辑 `users.json`。`ical-proxy/data/users.json` 仍是持久化文件，含私有 token，必须只保存在部署机，不要提交 Git；`ICAL_UPSTREAM` 仅作为 admin 的旧单用户兼容回退。
+把命令输出的 bcrypt 哈希填入服务器上的 `.env`，保留 `kele` 原有哈希，然后重启认证服务：
+
+```bash
+docker compose -f docker-compose.yml up -d --build auth-service caddy
+```
+
+如 `.env` 当前还使用旧的 `AUTH_USER`/`AUTH_HASH`，迁移到 `AUTH_USERS` 前请先保留原值备份；服务仍兼容旧变量，但多账号配置必须使用 `AUTH_USERS`。
 
 ---
 
@@ -209,7 +217,7 @@ curl -u admin:密码 https://kelelega.dpdns.org/calendar/api/calendar
 # 单元测试（53 项，不依赖网络）
 cd fund-monitor && python3 -m unittest discover -p "test_*.py"
 
-# 健康检查（生产走 Caddy，带 Basic Auth）
+# 健康检查（生产走 Caddy；先通过会话 Cookie 登录）
 curl -u "$AUTH_USER:密码" https://kelelega.dpdns.org/fund-monitor/healthz
 
 # 本地直连
