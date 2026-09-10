@@ -31,7 +31,7 @@ services:
       - ./entrypoint.sh:/custom-entrypoint.sh:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
-      HOMEPAGE_ALLOWED_HOSTS: localhost,localhost:3000,127.0.0.1,127.0.0.1:3000,103.79.186.22,kelelega.dpdns.org
+      HOMEPAGE_ALLOWED_HOSTS: localhost,localhost:3000,127.0.0.1,127.0.0.1:3000,103.79.186.22,103.117.121.62,kelelega.dpdns.org
     restart: unless-stopped
     depends_on:
       - glances
@@ -110,7 +110,15 @@ services:
     depends_on:
       - homepage
       - fund-monitor
+    networks:
+      - default
+      - life
 
 volumes:
   caddy_data:
   caddy_config:
+
+networks:
+  life:
+    external: true
+    name: life_default

@@ -24,8 +24,11 @@ docker run --rm caddy:2-alpine caddy hash-password --plaintext 'wzj 的密码'
 # 多个用户各占一行，用户名和哈希之间用空格分隔
 AUTH_USERS="kele <kele 的现有哈希>
 wzj <wzj 的新哈希>"
+SESSION_SECRET=<使用 openssl rand -hex 32 生成的随机值>
 ICAL_UPSTREAM=<管理员日历订阅地址>
 ```
+
+`SESSION_SECRET` 是必填项，且不要提交；可在服务器上运行 `openssl rand -hex 32` 生成。
 
 # 页面登录后，基金卡片右上角的「日历设置」可以保存或清除当前账号的地址。
 # 也可预先手工创建配置文件；真实 token 不要提交 Git。

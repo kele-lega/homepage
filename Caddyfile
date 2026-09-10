@@ -85,3 +85,7 @@ kelelega.dpdns.org {
 		}
 	}
 }
+
+life.kelelega.dpdns.org {
+	reverse_proxy app:3000
+}

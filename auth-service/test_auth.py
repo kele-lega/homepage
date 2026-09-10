@@ -49,6 +49,43 @@ class AuthTests(unittest.TestCase):
             spec.PASSWORD_HASH = password_hash
             self.assertEqual(spec.load_users(), {"kele": password_hash})
 
+    def test_login_rejects_invalid_body_shapes_and_lengths(self):
+        spec = __import__("auth", fromlist=["Handler"])
+        with mock.patch.object(spec, "USERS", {}):
+            server = ThreadingHTTPServer(("127.0.0.1", 0), spec.Handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                for payload in (b"[]", b"null", b'"text"'):
+                    with self.subTest(payload=payload):
+                        conn = http.client.HTTPConnection("127.0.0.1", server.server_port)
+                        conn.request(
+                            "POST",
+                            "/auth/login",
+                            body=payload,
+                            headers={"Content-Type": "application/json"},
+                        )
+                        response = conn.getresponse()
+                        self.assertEqual(response.status, 400)
+                        response.read()
+                        conn.close()
+
+                conn = http.client.HTTPConnection("127.0.0.1", server.server_port)
+                conn.request(
+                    "POST",
+                    "/auth/login",
+                    body=b"{}" + b" " * 4096,
+                    headers={"Content-Type": "application/json"},
+                )
+                response = conn.getresponse()
+                self.assertEqual(response.status, 400)
+                response.read()
+                conn.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
     def test_auth_service_me_and_logout(self):
         spec = __import__("auth", fromlist=["Handler"])
         password_hash = bcrypt.hashpw(b"secret", bcrypt.gensalt()).decode()

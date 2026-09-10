@@ -156,6 +156,19 @@ function fail(key) {
   emit('surprise', T.value[key])
 }
 
+function refreshCalendar() {
+  fetch('/calendar/api/calendar/refresh', {
+    method: 'POST',
+    credentials: 'same-origin',
+    cache: 'no-store',
+    keepalive: true,
+  }).catch(() => {})
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 async function handleSubmit() {
   if (loading.value || dark.value) return
   errKey.value = ''
@@ -178,9 +191,9 @@ async function handleSubmit() {
     }
     btnKey.value = 'btnWelcome'
     emit('success')
-    setTimeout(() => {
-      window.location.assign('/')
-    }, 900)
+    refreshCalendar()
+    await wait(900)
+    window.location.assign('/')
   } catch {
     fail('errWrong')
   } finally {

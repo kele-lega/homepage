@@ -18,13 +18,13 @@
         widget:
           type: calendar
           view: agenda
-          maxEvents: 20
+          maxEvents: 10
+          previousDays: 0
           showTime: false
           integrations:
             - type: ical
-              url: http://ical-proxy:8089/basic.ics
+              url: http://ical-proxy:8089/deadline.ics
               name: Deadline
-              color: red
 
 - 乙: []
 - 丙:

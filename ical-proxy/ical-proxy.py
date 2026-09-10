@@ -3,6 +3,7 @@ iCal 中转代理。
 
 - /basic.ics 按认证用户读取并缓存日历。
 - /api/calendar 允许认证用户读取、保存或清除自己的日历地址。
+- /api/calendar/refresh 强制刷新当前认证用户的日历缓存。
 - 用户配置通过临时文件和原子替换持久化，不接受请求体中的用户名。
 """
 import json
@@ -13,6 +14,7 @@ import tempfile
 import threading
 import time
 import ipaddress
+from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -23,10 +25,17 @@ UPSTREAM = os.environ.get(
 )
 USER_CONFIG = os.environ.get("ICAL_USERS_FILE", "/app/data/users.json")
 CACHE_TTL = 120
-RRULE_RE = re.compile(rb"^RRULE:.*\r?\n", re.MULTILINE)
+FORCE_REFRESH_COOLDOWN = 15
+MAX_ICAL_BYTES = 5 * 1024 * 1024
 USER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 CONFIG_LOCK = threading.RLock()
 CACHE = {}
+FETCH_LOCKS = {}
+FORCE_ATTEMPTED_AT = {}
+
+
+class InvalidCalendarData(RuntimeError):
+    pass
 
 
 def valid_user(user):
@@ -103,40 +112,65 @@ def save_user_urls(urls, path=USER_CONFIG):
             os.unlink(temporary)
 
 
-def update_user_url(user, url, path=USER_CONFIG):
+def user_fetch_lock(user):
     with CONFIG_LOCK:
-        urls = read_user_urls(path)
-        if url is None:
-            urls.pop(user, None)
-        else:
-            urls[user] = url
-        save_user_urls(urls, path)
-        CACHE.pop(user, None)
-        return urls.get(user)
+        return FETCH_LOCKS.setdefault(user, threading.Lock())
 
 
-def fetch_ical(user):
-    urls = load_user_urls(USER_CONFIG)
-    upstream = urls.get(user)
-    if not upstream:
-        if user != "admin":
-            raise ValueError("该用户尚未配置日历")
-        upstream = UPSTREAM
-    now = time.time()
-    cached = CACHE.get(user)
-    if cached and now - cached[1] < CACHE_TTL:
-        return cached[0]
-    req = Request(
-        upstream,
-        headers={
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/120.0 Safari/537.36",
-            "Accept": "text/calendar,*/*",
-        },
-    )
-    data = RRULE_RE.sub(b"", urlopen(req, timeout=10).read())
-    CACHE[user] = (data, now)
-    return data
+def update_user_url(user, url, path=USER_CONFIG):
+    with user_fetch_lock(user):
+        with CONFIG_LOCK:
+            urls = read_user_urls(path)
+            if url is None:
+                urls.pop(user, None)
+            else:
+                urls[user] = url
+            save_user_urls(urls, path)
+            CACHE.pop(user, None)
+            FORCE_ATTEMPTED_AT.pop(user, None)
+            return urls.get(user)
+
+
+def fetch_ical(user, force=False):
+    with user_fetch_lock(user):
+        urls = load_user_urls(USER_CONFIG)
+        upstream = urls.get(user)
+        if not upstream:
+            if user != "admin":
+                raise ValueError("该用户尚未配置日历")
+            upstream = UPSTREAM
+        now = time.time()
+        cached = CACHE.get(user)
+        if force and now - FORCE_ATTEMPTED_AT.get(user, 0) < FORCE_REFRESH_COOLDOWN:
+            if cached:
+                return cached[0]
+            raise ValueError("日历刚刚刷新过，请稍后再试")
+        if not force and cached and now - cached[1] < CACHE_TTL:
+            return cached[0]
+        if force:
+            FORCE_ATTEMPTED_AT[user] = now
+        req = Request(
+            upstream,
+            headers={
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+                "Accept": "text/calendar,*/*",
+            },
+        )
+        response = urlopen(req, timeout=10)
+        try:
+            data = response.read(MAX_ICAL_BYTES + 1)
+        finally:
+            close = getattr(response, "close", None)
+            if close:
+                close()
+        if len(data) > MAX_ICAL_BYTES:
+            raise InvalidCalendarData("上游 iCalendar 数据过大")
+        data_upper = data.upper()
+        if b"BEGIN:VCALENDAR" not in data_upper or b"END:VCALENDAR" not in data_upper:
+            raise InvalidCalendarData("上游未返回有效的 iCalendar 数据")
+        CACHE[user] = (data, now)
+        return data
 
 
 def calendar_user(handler):
@@ -144,6 +178,98 @@ def calendar_user(handler):
     if not valid_user(user):
         raise PermissionError("missing authenticated user")
     return user
+
+
+def _ical_property(lines, name):
+    prefix = name.upper() + b":"
+    for line in lines:
+        upper = line.upper()
+        if upper.startswith(name.upper()) and b":" in line:
+            key, value = line.split(b":", 1)
+            if key.upper() == name.upper() or key.upper().startswith(name.upper() + b";"):
+                return value.strip(), key
+    return None, None
+
+
+def _ical_date(value):
+    if not value:
+        return None
+    match = re.match(rb"(\d{4})(\d{2})(\d{2})", value)
+    if not match:
+        return None
+    try:
+        return date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+    except ValueError:
+        return None
+
+
+def _bounded_rrule(line, end_date, date_value):
+    boundary = end_date.strftime("%Y%m%d")
+    if not date_value:
+        boundary += "T235959Z"
+    parts = line.rstrip().split(b";")
+    changed = False
+    for index, part in enumerate(parts):
+        if part.upper().startswith(b"UNTIL="):
+            existing = part[6:14]
+            if existing.isdigit() and existing <= boundary[:8]:
+                return line
+            parts[index] = b"UNTIL=" + boundary.encode("ascii")
+            changed = True
+            break
+    if not changed:
+        parts.append(b"UNTIL=" + boundary.encode("ascii"))
+    return b";".join(parts)
+
+
+def filter_ical_window(data, days=30, today=None):
+    """Keep events occurring in the next window while retaining recurrence rules."""
+    today = today or date.today()
+    end_date = today + timedelta(days=days)
+    normalized = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    lines = normalized.split(b"\n")
+    if lines and lines[-1] == b"":
+        lines.pop()
+
+    output = []
+    event = None
+    for line in lines:
+        marker = line.upper()
+        if marker == b"BEGIN:VEVENT":
+            if event is not None:
+                raise InvalidCalendarData("iCalendar 事件结构无效")
+            event = [line]
+        elif marker == b"END:VEVENT":
+            if event is None:
+                raise InvalidCalendarData("iCalendar 事件结构无效")
+            event.append(line)
+            body = event[1:-1]
+            start_value, start_key = _ical_property(body, b"DTSTART")
+            start_date = _ical_date(start_value)
+            recurring = any(item.upper().startswith(b"RRULE:") for item in body)
+            keep = start_date is None or start_date <= end_date
+            if start_date is not None and not recurring:
+                keep = today <= start_date <= end_date
+            if keep:
+                if recurring and start_date is not None:
+                    bounded = []
+                    date_value = start_key is not None and b"VALUE=DATE" in start_key.upper()
+                    for item in event:
+                        if item.upper().startswith(b"RRULE:"):
+                            item = _bounded_rrule(item, end_date, date_value)
+                        bounded.append(item)
+                    output.extend(bounded)
+                else:
+                    output.extend(event)
+            event = None
+        elif event is not None:
+            event.append(line)
+        else:
+            output.append(line)
+
+    if event is not None:
+        raise InvalidCalendarData("iCalendar 事件结构无效")
+    return b"\r\n".join(output) + b"\r\n"
 
 
 def json_body(handler):
@@ -173,8 +299,17 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/calendar":
             self._calendar_get()
             return
+        if self.path.endswith("/deadline.ics"):
+            self._ical_get(window_days=30)
+            return
         if self.path.endswith("/basic.ics"):
             self._ical_get()
+            return
+        self._json(404, {"error": "not found"})
+
+    def do_POST(self):
+        if self.path == "/api/calendar/refresh":
+            self._calendar_refresh()
             return
         self._json(404, {"error": "not found"})
 
@@ -190,7 +325,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._json(404, {"error": "not found"})
 
-    def _ical_get(self):
+    def _ical_get(self, window_days=None):
         try:
             user = calendar_user(self)
         except PermissionError:
@@ -198,6 +333,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             data = fetch_ical(user)
+            if window_days is not None:
+                data = filter_ical_window(data, days=window_days)
         except ValueError as exc:
             self._json(403, {"error": str(exc)})
             return
@@ -205,6 +342,22 @@ class Handler(BaseHTTPRequestHandler):
             self._json(502, {"error": str(exc)})
             return
         self._respond(200, data, "text/calendar; charset=utf-8")
+
+    def _calendar_refresh(self):
+        try:
+            user = calendar_user(self)
+        except PermissionError:
+            self._json(401, {"error": "missing authenticated user"})
+            return
+        try:
+            data = fetch_ical(user, force=True)
+        except ValueError as exc:
+            self._json(403, {"error": str(exc)})
+            return
+        except Exception as exc:
+            self._json(502, {"error": str(exc)})
+            return
+        self._json(200, {"ok": True, "refreshed": True, "bytes": len(data)})
 
     def _calendar_get(self):
         try:

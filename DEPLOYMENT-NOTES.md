@@ -14,10 +14,11 @@
 ```dotenv
 AUTH_USERS="kele <kele 的现有 bcrypt 哈希>
 wzj <wzj 的新 bcrypt 哈希>"
+SESSION_SECRET=<使用 openssl rand -hex 32 生成的随机值>
 ICAL_UPSTREAM=https://calendar.google.com/calendar/ical/管理员token/public/basic.ics
 ```
 
-不要把真实密码、哈希或日历 token 写入 Git，也不要发到聊天中。推荐在服务器上执行：
+不要把真实密码、哈希、`SESSION_SECRET` 或日历 token 写入 Git，也不要发到聊天中。`SESSION_SECRET` 是必填项；可在服务器上执行 `openssl rand -hex 32` 生成。推荐在服务器上执行：
 
 ```bash
 read -rsp 'wzj password: ' WZJ_PASSWORD; echo

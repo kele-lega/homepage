@@ -106,11 +106,15 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, 404, {"error": "not found"})
             return
         try:
-            length = min(int(self.headers.get("Content-Length", "0")), 4096)
+            length = int(self.headers.get("Content-Length", "0"))
+            if length <= 0 or length > 4096:
+                raise ValueError("invalid content length")
             data = json.loads(self.rfile.read(length))
+            if not isinstance(data, dict):
+                raise ValueError("invalid request body")
             username = str(data.get("username", "")).strip()
             password = str(data.get("password", ""))
-        except (ValueError, json.JSONDecodeError):
+        except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
             json_response(self, 400, {"error": "invalid request"})
             return
         password_hash = USERS.get(username)

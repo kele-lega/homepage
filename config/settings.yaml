@@ -29,4 +29,6 @@ layout:
 
 maxGroupColumns: 4
 
+disableCollapse: true
+
 showStats: true

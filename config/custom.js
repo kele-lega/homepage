@@ -553,6 +553,7 @@
   "use strict";
 
   var CARD_ID = "ios-fund";
+  var GROUP_ID = "ios-fund-group";
   var POLL_MS = 30000; // 前端只是读缓存，间隔可以比后端抓取更短
 
   // 后端地址在生产/本地不一样，而本地 homepage 端口还可能被改（3000/3001/…），
@@ -1497,28 +1498,51 @@
       });
   }
 
-  // 卡片放进乙分组的展开内容末尾，紧贴乙组服务列表正下方。
-  // 这样它不会参与甲/乙/丙/丁的横向分栏，而是作为乙组内的单独一行显示。
+  // Homepage 的 services API 会过滤空服务组，因此乙没有原生服务时由这里补一个
+  // 同结构的宿主。宿主只包含标题和基金卡片，不创建可点击的占位服务。
   function insertionPoint() {
     var groups = document.getElementById("layout-groups");
-    if (groups) {
-      var serviceGroups = groups.querySelectorAll(".services-group");
-      for (var i = 0; i < serviceGroups.length; i++) {
-        var title = serviceGroups[i].querySelector(".service-group-name");
-        if (title && title.textContent.trim() === "乙") {
-          var panel = serviceGroups[i].querySelector('[id^="headlessui-disclosure-panel"]');
-          if (panel) return { parent: panel, before: null };
-        }
+    if (!groups) return null;
+
+    var serviceGroups = groups.querySelectorAll(".services-group:not(.ios-fund-group)");
+    for (var i = 0; i < serviceGroups.length; i++) {
+      var title = serviceGroups[i].querySelector(".service-group-name");
+      if (title && title.textContent.trim() === "乙") {
+        document.querySelectorAll("#" + GROUP_ID).forEach(function (node) {
+          node.remove();
+        });
+        var panel = serviceGroups[i].querySelector('[id^="headlessui-disclosure-panel"]');
+        if (panel) return { parent: panel, before: null };
+        var services = serviceGroups[i].querySelector(".services-list");
+        if (services && services.parentElement) return { parent: services.parentElement, before: null };
       }
     }
 
-    // 甲分组尚未渲染时暂不挂载，避免先插到错误位置后又被 React 重排。
-    // 没有 layout-groups 时保留旧的 footer 兜底，兼容 Homepage 结构变化。
-    var footer = document.getElementById("footer");
-    if (!groups && footer && footer.parentElement) {
-      return { parent: footer.parentElement, before: footer };
+    var host = document.getElementById(GROUP_ID);
+    document.querySelectorAll("#" + GROUP_ID).forEach(function (node, index) {
+      if (index > 0) node.remove();
+    });
+    if (host && host.parentElement !== groups) host.remove();
+    host = groups.querySelector("#" + GROUP_ID);
+    if (!host) {
+      host = el("div", "services-group ios-fund-group flex-1 basis-full md:basis-1/2 lg:basis-1/3 xl:basis-1/4 p-1 pb-0");
+      host.id = GROUP_ID;
+      var heading = el("h2", "flex text-theme-800 dark:text-theme-300 text-xl font-medium service-group-name", "乙");
+      host.appendChild(heading);
     }
-    return null;
+
+    var before = null;
+    for (var j = 0; j < serviceGroups.length; j++) {
+      var nextTitle = serviceGroups[j].querySelector(".service-group-name");
+      if (nextTitle && nextTitle.textContent.trim() === "丙") {
+        before = serviceGroups[j];
+        break;
+      }
+    }
+    if (host.parentElement !== groups || host.nextElementSibling !== before) {
+      groups.insertBefore(host, before);
+    }
+    return { parent: host, before: null };
   }
 
   function settingsPoint() {

@@ -23,7 +23,7 @@
         homepage:3000 直接对外，fund-monitor 额外映射到宿主机 8090，使用 local 用户
 ```
 
-生产环境的认证用户名只由 Caddy 注入，浏览器自行提交的同名 header 不应被信任。基金服务按 `fund-monitor/data/users/<用户名>/` 分区；iCal 服务按 `ical-proxy/data/users.json` 选择上游并按用户缓存。登录后可在设置入口的「日历」板块保存或清除当前用户地址，在「账号」板块查看当前用户名并退出登录；日历 API 路径为 `/calendar/api/calendar`，账号 API 为 `/auth/me` 和 `/auth/logout`。退出登录会清除当前浏览器的 session cookie；由于 session 是无服务器状态签名令牌，复制出的旧令牌仍可在 TTL 内有效。
+生产环境的认证用户名只由 Caddy 注入，浏览器自行提交的同名 header 不应被信任。基金服务按 `fund-monitor/data/users/<用户名>/` 分区；iCal 服务按 `ical-proxy/data/users.json` 选择上游并按用户缓存。登录后可在设置入口的「日历」板块保存或清除当前用户地址，在「账号」板块查看当前用户名并退出登录；日历 API 路径为 `/calendar/api/calendar`，登录成功后还会非阻断调用 `/calendar/api/calendar/refresh` 强制更新一次当前账号的缓存，账号 API 为 `/auth/me` 和 `/auth/logout`。退出登录会清除当前浏览器的 session cookie；由于 session 是无服务器状态签名令牌，复制出的旧令牌仍可在 TTL 内有效。
 
 homepage 本身是社区镜像（gethomepage），项目自身代码只有：
 - `config/custom.js` / `config/custom.css` —— 注入到 homepage 页面里的自定义 UI（基金卡片、农历等）
@@ -106,7 +106,7 @@ use_estimate = (
 ## 4. 常见故障排查
 
 - **生产认证用户不生效**：确认 `.env` 使用 `AUTH_USERS`，每个用户一行“用户名 + Caddy 哈希”，然后重建 Caddy；不要继续使用旧的 `AUTH_USER` / `AUTH_HASH`。
-- **某用户日历为空**：确认 Homepage 卡片的「日历设置」中已保存地址，或检查 `ical-proxy/data/users.json` 中存在完全相同的用户名，并检查 Homepage 容器启动日志中是否出现 `Patched calendar proxy identity forwarding`。
+- **某用户日历为空**：先确认该账号已在 Homepage 设置入口的「日历」中保存自己的地址；每个账号都要配置一次，系统不会从登录账号自动推导 Google 私有 iCalendar URL。再检查 `ical-proxy/data/users.json` 中存在完全相同的用户名，并检查 Homepage 容器启动日志中是否出现 `calendar identity patch applied`。正常请求按用户缓存 120 秒；每次登录会调用刷新接口绕过这层缓存（同一账号连续强刷有 15 秒冷却），刷新失败不会阻断登录。代理最多读取 5 MiB 的上游日历响应。
 - **Homepage 镜像升级后拒绝启动**：这是刻意的安全保护，表示 `entrypoint.sh` 找不到日历代理补丁目标。检查新镜像的 `httpProxy(integration.url, options)` 调用位置后再适配，不要删除该检查。
 
 按 `custom.js` 里 `candidates()` 的顺序逐个排查：
@@ -141,7 +141,7 @@ use_estimate = (
   当前是 `1rem`（<640px）/ `2rem`（≥640px），对应 Tailwind 的 `m-4`/`m-8`。如果 homepage
   升级后分组的 margin class 变了，这里也要跟着改，不能想当然用页面顶部信息栏的 margin
   （那个是 `m-5`/`m-9`，会造成 4px 的偏差）。
-- **基金卡片位置/折叠**：自定义基金净值卡片应插在乙组服务列表末尾，并始终展开；`insertionPoint()` 依赖 `#footer` 及服务组标题查找逻辑，Homepage 升级后若 DOM 结构变化，需要同步更新选择器。
+- **基金卡片位置/折叠**：自定义基金净值卡片应位于乙组并始终展开。Homepage 会从 `/api/services` 过滤空服务组，所以 `services.yaml` 中的 `乙: []` 不会生成 DOM；`insertionPoint()` 会在 `#layout-groups` 中创建不含服务链接的 `#ios-fund-group` 宿主并插在丙组之前。Homepage 升级后若分组 DOM 或宽度类变化，需要同步更新该宿主和选择器。
 
 ---
 
