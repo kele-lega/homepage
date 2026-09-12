@@ -1,6 +1,6 @@
 # 最简部署
 
-同一台 Linux 服务器即可运行。现在支持多个登录账号，每个账号有独立的基金列表、基金缓存和日历。Caddy 负责 HTTPS 入口，认证服务签发会话 Cookie，并把当前用户名传给内部服务。
+同一台 Linux 服务器即可运行。现在支持多个登录账号，每个账号有独立的基金列表、基金缓存和日历。管理员只有 `kele`，可以管理其他账号并查看丁组；普通用户看不到丁组。乙组基金面板可在设置里开关。Caddy 负责 HTTPS 入口，认证服务签发会话 Cookie，并把当前用户名传给内部服务。
 
 ## 0. 前置
 
@@ -14,7 +14,8 @@
 git clone https://github.com/kele-lega/homepage.git
 cd homepage
 
-# 生成 wzj 管理账号的密码哈希（密码只在服务器上输入，不要提交或发到聊天）
+# 生成普通账号 wzj 的初始密码哈希（密码只在服务器上输入，不要提交或发到聊天）
+# 之后也可由 kele 在设置页直接添加普通账号
 docker run --rm caddy:2-alpine caddy hash-password --plaintext 'wzj 的密码'
 ```
 

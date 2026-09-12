@@ -105,7 +105,9 @@ use_estimate = (
 
 ## 4. 常见故障排查
 
-- **生产认证用户不生效**：确认 `.env` 使用 `AUTH_USERS`，每个用户一行“用户名 + Caddy 哈希”，然后重建 Caddy；不要继续使用旧的 `AUTH_USER` / `AUTH_HASH`。
+- **生产认证用户不生效**：确认 `.env` 使用 `AUTH_USERS`，每个用户一行“用户名 + bcrypt 哈希”，然后重建 `auth-service`；不要继续使用旧的 `AUTH_USER` / `AUTH_HASH`。管理员固定为 `kele`，普通账号可写在 `.env` 或由 kele 在设置页添加，持久化文件是 `auth-service/data/users.json`。
+- **普通用户仍能看到丁组 / 乙组关不掉**：确认浏览器已加载最新 `custom.js`。丁组只对 `kele` 显示；乙组开关在设置的「面板」中，按当前登录用户保存在 `localStorage`，关闭后整组移除，剩余分组会改成 3 栏或 2 栏以免留空。基金代码的添加和删除也在「面板」里，卡片上不再显示。
+- **改密失败**：自己改密码必须填写原密码；管理员改其他账号不需要原密码，入口在「账号管理」。
 - **某用户日历为空**：先确认该账号已在 Homepage 设置入口的「日历」中保存自己的地址；每个账号都要配置一次，系统不会从登录账号自动推导 Google 私有 iCalendar URL。再检查 `ical-proxy/data/users.json` 中存在完全相同的用户名，并检查 Homepage 容器启动日志中是否出现 `calendar identity patch applied`。正常请求按用户缓存 120 秒；每次登录会调用刷新接口绕过这层缓存（同一账号连续强刷有 15 秒冷却），刷新失败不会阻断登录。代理最多读取 5 MiB 的上游日历响应。
 - **Homepage 镜像升级后拒绝启动**：这是刻意的安全保护，表示 `entrypoint.sh` 找不到日历代理补丁目标。检查新镜像的 `httpProxy(integration.url, options)` 调用位置后再适配，不要删除该检查。
 

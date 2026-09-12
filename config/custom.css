@@ -360,27 +360,117 @@ li.service[data-name="Deadline"] .service-container details {
  * Homepage 默认在 lg 使用 1/3，导致 1024–1279px 宽度下第四个分组换行。
  * 从 lg 起固定四栏，让甲组内基金卡片变高时也不会改变分组列数。
  */
+#layout-groups > .services-group[hidden] {
+  display: none !important;
+}
+
+@media (min-width: 768px) {
+  #layout-groups.layout-cols-2 > .services-group:not([hidden]) {
+    flex: 0 0 50% !important;
+    max-width: 50%;
+  }
+
+  #layout-groups.layout-cols-3 > .services-group:not([hidden]) {
+    flex: 0 0 33.3333% !important;
+    max-width: 33.3333%;
+  }
+}
+
+#layout-groups {
+  align-items: flex-start !important;
+  align-content: flex-start !important;
+}
+
 @media (min-width: 64rem) {
   .services-group.flex-1 {
     flex: 0 0 25% !important;
     min-width: 0;
     max-width: 25%;
-    align-self: stretch !important;
   }
 
-  #layout-groups > .ios-fund-group {
-    display: flex;
-    flex-direction: column;
+  #layout-groups.layout-cols-2 > .services-group:not([hidden]) {
+    flex: 0 0 50% !important;
+    max-width: 50%;
   }
 
-  #layout-groups > .ios-fund-group > .ios-fund {
-    flex: 1 1 auto;
+  #layout-groups.layout-cols-3 > .services-group:not([hidden]) {
+    flex: 0 0 33.3333% !important;
+    max-width: 33.3333%;
+  }
+
+  #layout-groups.layout-cols-4 > .services-group:not([hidden]) {
+    flex: 0 0 25% !important;
+    max-width: 25%;
   }
 }
 
-/* 自定义乙组与原生分组一样允许收缩，避免基金内容在窄屏撑出页面。 */
-#layout-groups > .ios-fund-group {
+/* 乙组只有一张基金卡，结构跟丙一样是 ul.services-list > li.service。
+   交叉轴 flex-start，高度跟内容，不能 stretch 到甲组 Calendar 的列高。 */
+#layout-groups > .services-group {
+  align-self: flex-start !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+#layout-groups > .ios-fund-group,
+#layout-groups > .services-group:has(#ios-fund) {
+  display: block !important;
   min-width: 0;
+  height: auto !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  align-self: flex-start !important;
+}
+
+#layout-groups > .ios-fund-group > .group,
+#layout-groups > .services-group:has(#ios-fund) > .group {
+  display: flex;
+  align-items: center;
+  min-height: 1.75rem;
+}
+
+#layout-groups > .ios-fund-group > .services-list,
+#layout-groups > .services-group:has(#ios-fund) > .services-list,
+#layout-groups .services-list:has(#ios-fund),
+#layout-groups .services-list:has(#ios-fund-item) {
+  display: flex !important;
+  flex-direction: column !important;
+  height: auto !important;
+  min-height: 0 !important;
+  margin-top: 0.75rem !important;
+}
+
+#ios-fund-item,
+li.service:has(> .ios-fund) {
+  display: block !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  flex: none !important;
+  margin-top: 0 !important;
+}
+
+#layout-groups .ios-fund,
+#ios-fund {
+  display: block !important;
+  flex: none !important;
+  width: 100%;
+  height: auto !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  padding: 0.55rem 0.75rem 0.5rem !important;
+}
+
+/* 乙若残留空的原生折叠面板，藏掉，避免把组撑高。
+   不能匹配已经挂了基金卡的 ul，否则会把原生 mt-3 清掉，卡片顶边会比甲丙更高。 */
+#layout-groups > .services-group:has(#ios-fund) > [id^="headlessui-disclosure-panel"]:not(:has(#ios-fund)):not(:has(#ios-fund-item)),
+#layout-groups > .services-group:has(#ios-fund) .services-list:not(:has(#ios-fund)):not(:has(#ios-fund-item)) {
+  display: none !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
 }
 
 /*
@@ -388,7 +478,7 @@ li.service[data-name="Deadline"] .service-container details {
  * border-box 让边框计入既有卡片尺寸，不会改变四组列宽或等高布局。
  */
 .services-group .service-card,
-.services-group > .ios-fund {
+.services-group .ios-fund {
   box-sizing: border-box;
   border: 1px solid var(--ios-separator);
   border-radius: 0.75rem;
@@ -512,11 +602,14 @@ li.service .w-3.h-3.opacity-50 svg {
   position: relative;
   z-index: 1;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
   width: min(52rem, calc(100% - 2rem));
+  height: min(34rem, calc(100% - 2rem));
   min-height: min(34rem, calc(100% - 2rem));
   max-width: calc(100% - 2rem);
-  max-height: calc(100% - 2rem);
-  overflow: auto;
+  max-height: min(34rem, calc(100% - 2rem));
+  overflow: hidden;
   padding: clamp(1.25rem, 2.5vw, 2rem);
   border: 1px solid var(--ios-settings-border);
   border-radius: 1.25rem;
@@ -626,7 +719,8 @@ li.service .w-3.h-3.opacity-50 svg {
 .ios-settings-layout {
   display: grid;
   grid-template-columns: 8rem minmax(0, 1fr);
-  min-height: 21rem;
+  flex: 1 1 auto;
+  min-height: 0;
   gap: 1.5rem;
 }
 
@@ -667,8 +761,19 @@ li.service .w-3.h-3.opacity-50 svg {
   transform: scale(0.98);
 }
 
+.ios-settings-tab[hidden] {
+  display: none !important;
+}
+
 .ios-settings-content {
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ios-settings-panel {
+  height: 100%;
+  overflow: auto;
 }
 
 .ios-settings-panel[hidden] {
@@ -693,6 +798,121 @@ li.service .w-3.h-3.opacity-50 svg {
   margin-top: 0.75rem;
   color: var(--ios-settings-muted);
   font-size: 0.75rem;
+}
+
+.ios-settings-role {
+  margin: -0.45rem 0 0.85rem;
+  color: var(--ios-settings-muted);
+  font-size: 0.78rem;
+}
+
+.ios-settings-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.35rem 0 0.4rem;
+  color: var(--ios-settings-text);
+  font-size: 0.88rem;
+}
+
+.ios-settings-switch {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--ios-blue);
+}
+
+.ios-settings-admin {
+  margin-top: 1.25rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--ios-settings-border);
+}
+
+.ios-settings-user-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-bottom: 0.75rem;
+}
+
+.ios-settings-user-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--ios-settings-border);
+  border-radius: 0.5rem;
+  background: var(--ios-settings-subtle);
+}
+
+.ios-settings-user-name {
+  min-width: 0;
+  color: var(--ios-settings-text);
+  font-size: 0.82rem;
+}
+
+.ios-settings-user-delete {
+  flex: 0 0 auto;
+  padding: 0.25rem 0.55rem;
+  border: 0;
+  border-radius: 0.4rem;
+  color: #fff;
+  background: #b42318;
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.ios-settings-user-delete:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ios-settings-user-empty {
+  color: var(--ios-settings-muted);
+  font-size: 0.78rem;
+}
+
+.ios-settings-user-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.ios-settings-user-form .ios-fund-calendar-input {
+  flex: 1 1 8rem;
+}
+
+.ios-settings-password-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.2rem 0 0.85rem;
+}
+
+.ios-settings-user-reset {
+  flex: 0 0 auto;
+  padding: 0.25rem 0.55rem;
+  border: 0;
+  border-radius: 0.4rem;
+  color: var(--ios-settings-text);
+  background: var(--ios-settings-subtle);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.ios-settings-user-reset:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ios-settings-fund-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 0.55rem 0 0.75rem;
 }
 
 .ios-settings-actions {
@@ -800,7 +1020,11 @@ li.service .w-3.h-3.opacity-50 svg {
 
 .ios-fund-calendar-save,
 .ios-fund-calendar-clear,
-.ios-settings-logout {
+.ios-settings-logout,
+.ios-settings-create-user,
+.ios-settings-change-password,
+.ios-settings-reset-password,
+.ios-settings-add-fund {
   min-width: 5.25rem;
   height: 2.5rem;
   padding: 0 0.85rem;
@@ -910,7 +1134,9 @@ li.service .w-3.h-3.opacity-50 svg {
 @media (max-width: 768px) {
   .ios-settings-dialog {
     width: calc(100% - 1.5rem);
+    height: min(62vh, 40rem);
     min-height: min(62vh, 40rem);
+    max-height: min(62vh, 40rem);
     padding: 1.25rem;
   }
   .ios-settings-layout {
@@ -928,9 +1154,13 @@ li.service .w-3.h-3.opacity-50 svg {
   }
   .ios-settings-dialog {
     width: calc(100% - 1rem);
+    height: min(70vh, 40rem);
+    min-height: min(70vh, 40rem);
+    max-height: min(70vh, 40rem);
   }
   .ios-settings-layout {
-    display: block;
+    display: flex;
+    flex-direction: column;
     min-height: 0;
   }
   .ios-settings-nav {
@@ -965,58 +1195,64 @@ li.service .w-3.h-3.opacity-50 svg {
   --fund-up: #ff3b30;
   --fund-down: #34c759;
   font-family: var(--ios-font);
-  /* 左右间距对齐甲乙丙丁分组的外边缘（实测为 1rem，sm 起 2rem），
-     比信息栏的 m-5/m-9 各窄 4px，这样竖直边线和分组卡片完全对齐 */
-  margin: 0.5rem 1rem 0;
-  /* box-sizing 保证 padding+border 不会把宽度顶出容器 */
   box-sizing: border-box;
-  /* 宽度跟甲乙丙丁分组列严格对齐。分组容器 #services 是 m-4 sm:m-8（1rem/2rem），
-     分组列 = (容器宽 - 左右margin) × 1/2|1/3|1/4；CSS 百分比不扣自身 margin，
-     所以必须用 calc 减掉，否则会比分组列宽出一截（约 16-20px） */
-  width: auto;
-  max-width: none;
-  padding: 0.75rem 0.9rem;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: auto;
+  margin: 0 0 0.5rem;
+  padding: 0.55rem 0.75rem 0.45rem;
   border-radius: 0.75rem;
-  background: rgba(255, 255, 255, 0.06);
+  color: rgb(var(--color-700));
+  background-color: rgb(var(--color-100) / 0.2);
   border: 1px solid var(--ios-separator);
-  backdrop-filter: blur(8px);
+  box-shadow:
+    0 4px 6px -1px rgb(var(--color-900) / 0.1),
+    0 2px 4px -2px rgb(var(--color-900) / 0.1);
+  overflow: visible;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-/* sm 断点起分组外边缘变成 2rem，卡片跟着走，保持左右对齐 */
-@media (min-width: 640px) {
-  .ios-fund {
-    margin: 0.5rem 2rem 0;
-  }
+.ios-fund:hover {
+  background-color: rgb(var(--color-300) / 0.2);
 }
 
-/* 宽度在各断点跟甲乙丙丁分组列保持一致：
-   分组列 = (父容器宽 - 左右margin) × 比例；卡片同样有 1rem/2rem 的 margin，
-   所以百分比要减去对应份额（50%→2rem、1/3→1.3333rem、25%→1rem，均为 sm 起 2rem margin 的一半/三分之一/四分之一） */
-@media (min-width: 768px) {
-  .ios-fund {
-    width: calc(50% - 2rem);
-    max-width: calc(50% - 2rem);
-  }
-}
-@media (min-width: 1024px) {
-  .ios-fund {
-    width: calc(33.3333% - 1.3333rem);
-    max-width: calc(33.3333% - 1.3333rem);
-  }
-}
-@media (min-width: 1280px) {
-  .ios-fund {
-    width: calc(25% - 1rem);
-    max-width: calc(25% - 1rem);
-  }
+html.dark .ios-fund {
+  color: rgb(var(--color-200));
+  background-color: rgb(255 255 255 / 0.05);
+  box-shadow:
+    0 4px 6px -1px rgb(var(--color-900) / 0.2),
+    0 2px 4px -2px rgb(var(--color-900) / 0.2);
 }
 
-/* 放在乙组内部时占满该组内容宽度，确保视觉上正下方单列显示 */
+html.dark .ios-fund:hover {
+  color: rgb(var(--color-300));
+  background-color: rgb(255 255 255 / 0.1);
+}
+
+/* theme-white 对原生卡片有特殊近白底，乙组跟同一规则，避免亮色发灰。 */
+html.light.theme-white .ios-fund {
+  background-color: rgb(245, 245, 245);
+}
+
+html.light.theme-white .ios-fund:hover {
+  background-color: rgb(250, 250, 250);
+}
+
+/* 放在乙组内部时占满该组内容宽度，外框尺寸跟甲丙丁的 service-card 一致 */
 .services-group .ios-fund {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  margin: 0.5rem 0 0;
+  margin: 0 0 0.5rem;
+}
+
+.ios-fund-body {
+  display: block;
+  height: auto;
+  flex: none;
+  padding: 0;
 }
 
 .ios-fund-head {
@@ -1025,18 +1261,18 @@ li.service .w-3.h-3.opacity-50 svg {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.35rem;
+  padding: 0 0.15rem;
 }
 
 .ios-fund-title {
-  font-size: 0.9rem;
+  font-size: 0.875rem; /* text-sm */
   font-weight: 500;
-  color: var(--ios-label);
+  color: inherit;
 }
 
 .ios-fund-status,
-.ios-fund-date,
-.ios-fund-code {
+.ios-fund-date {
   font-size: 0.7rem;
   color: var(--ios-secondary);
 }
@@ -1080,14 +1316,17 @@ li.service .w-3.h-3.opacity-50 svg {
 .ios-fund-list {
   display: flex;
   flex-direction: column;
+  height: auto;
+  flex: none;
 }
 
 .ios-fund-row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6ch auto;
+  align-items: start;
+  column-gap: 0.65rem;
   min-width: 0;
-  padding: 0.4rem 0;
+  padding: 0.3rem 0.15rem;
   border-top: 1px solid var(--ios-separator);
 }
 .ios-fund-row:first-child {
@@ -1096,20 +1335,17 @@ li.service .w-3.h-3.opacity-50 svg {
 
 /* 名称区可压缩，保证长基金名不把数字挤出去 */
 .ios-fund-main {
-  flex: 1 1 auto;
   min-width: 0;
 }
 
 .ios-fund-nameline {
-  display: flex;
-  align-items: baseline;
-  gap: 0.35rem;
+  display: block;
   min-width: 0;
 }
 
 /* 长名称截断成省略号，不换行、不挤压基金代码或净值列 */
 .ios-fund-name {
-  flex: 1 1 auto;
+  display: block;
   min-width: 0;
   font-size: 0.82rem;
   color: var(--ios-label);
@@ -1119,8 +1355,17 @@ li.service .w-3.h-3.opacity-50 svg {
 }
 
 .ios-fund-code {
-  flex: 0 0 auto;
+  box-sizing: content-box;
+  width: 6ch;
+  padding-top: 0.12rem;
+  font-size: 0.7rem;
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-align: right;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  color: var(--ios-secondary);
 }
 
 .ios-fund-meta {
@@ -1146,10 +1391,11 @@ li.service .w-3.h-3.opacity-50 svg {
 
 /* 净值 + 涨跌幅：等宽数字，右对齐，跨行不跳动 */
 .ios-fund-nums {
-  flex: 0 0 auto;
+  justify-self: end;
   text-align: right;
   font-variant-numeric: tabular-nums;
-  min-width: 4.5rem;
+  font-feature-settings: "tnum";
+  min-width: 4.75rem;
 }
 
 .ios-fund-nav {
@@ -1254,16 +1500,82 @@ li.service .w-3.h-3.opacity-50 svg {
   cursor: default;
 }
 
-/* 窄屏：数字列略收窄，标签换行也不溢出 */
+/* 窄屏：数字列略收窄，标签换行也不溢出；外框 padding 仍跟原生卡片一致 */
 @media (max-width: 640px) {
-  .ios-fund {
-    padding: 0.6rem 0.7rem;
-  }
   .ios-fund-nums {
     min-width: 4rem;
   }
   .ios-fund-name {
     font-size: 0.78rem;
   }
+}
+
+/* ============ 主题：仅保留明暗模式 ============ */
+/* 保留 Homepage 原生明暗开关，隐藏颜色选择器。 */
+#color {
+  display: none !important;
+}
+
+/* 显式跟随 Homepage 的模式 class，避免系统偏好覆盖手动选择。 */
+html.light {
+  --ios-label: rgba(0, 0, 0, 0.88);
+  --ios-secondary: rgba(0, 0, 0, 0.72);
+  --ios-separator: rgba(0, 0, 0, 0.08);
+  --ios-settings-surface: #ffffff;
+  --ios-settings-text: #18181b;
+  --ios-settings-muted: #71717a;
+  --ios-settings-border: #d4d4d8;
+  --ios-settings-subtle: #f4f4f5;
+  --ios-settings-input: #fafafa;
+}
+
+/* theme-white 把主文字锁成 rgb(120,120,120)，logo 还带 20%/40% 透明度，
+   叠在灰色背景上会糊掉。只在亮色下加深，不影响暗色。 */
+html.light.theme-white {
+  --color-900: 24 24 27;
+  --color-500: 63 63 70;
+  --color-logo-start: 39 39 42;
+  --color-logo-stop: 9 9 11;
+}
+
+html.light.theme-white .text-theme-800,
+html.light.theme-white .text-theme-900,
+html.light.theme-white .information-widget-icon,
+html.light.theme-white #information-widgets svg,
+html.light.theme-white #theme svg,
+html.light.theme-white #style svg,
+html.light.theme-white #footer svg {
+  color: rgb(24 24 27);
+}
+
+html.light.theme-white .text-theme-500,
+html.light.theme-white #version,
+html.light.theme-white #version a {
+  color: rgb(63 63 70);
+}
+
+html.dark {
+  --ios-label: rgba(255, 255, 255, 0.92);
+  --ios-secondary: rgba(235, 235, 245, 0.6);
+  --ios-separator: rgba(255, 255, 255, 0.12);
+  --ios-settings-surface: #27272a;
+  --ios-settings-text: #f4f4f5;
+  --ios-settings-muted: #a1a1aa;
+  --ios-settings-border: #52525b;
+  --ios-settings-subtle: #3f3f46;
+  --ios-settings-input: #18181b;
+}
+
+/* 两种模式分别指定背景，并覆盖 Homepage 的 inline background-image。 */
+html.dark #background {
+  background-image:
+    linear-gradient(rgb(var(--bg-color) / 0.5), rgb(var(--bg-color) / 0.5)),
+    url("/images/background.png") !important;
+}
+
+html.light #background {
+  background-image:
+    linear-gradient(rgb(var(--bg-color) / 0.5), rgb(var(--bg-color) / 0.5)),
+    url("/images/background-light.png") !important;
 }
 

@@ -7,7 +7,7 @@
 
 ## 1. .env 文件 — 云端手动创建
 
-当前部署使用多账号会话认证：现有账号为 `kele`，新增管理账号为 `wzj`。Caddy 提供 HTTPS 入口，认证服务签发 HttpOnly 会话 Cookie；Caddy 校验会话后把 `X-Authenticated-User` 注入内部请求。账号的基金列表、缓存和日历配置按用户名分别隔离。
+当前部署使用多账号会话认证：管理员只有 `kele`，其余账号都是普通用户。Caddy 提供 HTTPS 入口，认证服务签发 HttpOnly 会话 Cookie；Caddy 校验会话后把 `X-Authenticated-User` 注入内部请求。账号的基金列表、缓存和日历配置按用户名分别隔离。只有 `kele` 能在设置里添加或删除普通账号，并看到丁组系统监控；乙组基金面板对所有账号都可以开关，关闭后整组隐藏，其余分组自动补齐。
 
 `.env` 不在 git 中（`.gitignore` 已忽略）。每个账号占一行，格式为“用户名 + bcrypt 哈希”：
 
@@ -26,7 +26,7 @@ docker run --rm caddy:2-alpine caddy hash-password --plaintext "$WZJ_PASSWORD"
 unset WZJ_PASSWORD
 ```
 
-把命令输出的 bcrypt 哈希填入服务器上的 `.env`，保留 `kele` 原有哈希，然后重启认证服务：
+把命令输出的 bcrypt 哈希填入服务器上的 `.env`，保留 `kele` 原有哈希。普通账号也可以稍后由 `kele` 在设置页添加，不必写进 `.env`。然后重启认证服务：
 
 ```bash
 docker compose -f docker-compose.yml up -d --build auth-service caddy
@@ -90,19 +90,20 @@ my-docker:
 
 ---
 
-## 4. glances 的 pid: host — Windows 不支持
+## 4. glances 的 pid: host / network_mode: host — Windows 不支持
 
-docker-compose.yml 中 glances 服务使用了 `pid: host` 来采集宿主机真实进程数据：
+docker-compose.yml 中 glances 同时使用 `pid: host` 和 `network_mode: host`，才能采到宿主机
+CPU/内存/进程和宿主机网卡（本机是 `ens17`，对应 `services.yaml` 的 `metric: network:ens17`）。
+只开 `pid: host` 时网卡仍是容器里的 `eth0`，流量会一直接近 0。
 
-```yaml
-glances:
-  pid: host
-```
+API 绑定 `172.17.0.1:61208`（docker0），不监听公网。Homepage 用 `extra_hosts: glances:host-gateway`
+继续访问 `http://glances:61208`。
 
 - 云端 Linux：正常工作，glances 看到的是宿主机的 CPU/内存/网络
-- Windows 10：`pid: host` 在 Docker Desktop 下无效（WSL2 隔离），glances 只能看到容器自身的数据
+- Windows 10：`pid: host` 和 `network_mode: host` 在 Docker Desktop 下无效（WSL2 隔离），
+  glances 只能看到容器自身的数据
 
-本地调试时可以注释掉 `pid: host`，不影响其他功能，只是监控数据不准确。这是 Docker Desktop
+本地调试时可以注释掉这两项，不影响其他功能，只是监控数据不准确。这是 Docker Desktop
 的已知限制，不是 bug。
 
 ---
@@ -244,7 +245,7 @@ docker compose logs -f fund-monitor
 | ALLOWED_HOSTS | 改公网 IP | localhost 即可 |
 | docker.sock 挂载 | `/var/run/docker.sock` | `//var/run/docker.sock` |
 | docker.yaml | socket 方式 | TCP host.docker.internal |
-| pid: host | 正常 | 无效，注释掉 |
+| pid: host / network_mode: host | 正常 | 无效，注释掉 |
 | Google Calendar | 直连 | 需代理/VPN |
 | 防火墙 | 手动开放端口 | 自动放行 |
 | 行尾符 | LF（无问题） | 注意 CRLF 问题 |

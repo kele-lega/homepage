@@ -5,6 +5,9 @@
 - glances:
     url: http://glances:61208
     version: 4
+    expanded: true
+    disk: /host
+    uptime: true
 
 - openmeteo:
     label: 坪山

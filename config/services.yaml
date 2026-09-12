@@ -51,7 +51,7 @@
           url: http://glances:61208
           version: 4
           metric: cpu
-          chart: false
+          chart: true
     - 内存使用率:
         widget:
           type: glances
@@ -64,8 +64,8 @@
           type: glances
           url: http://glances:61208
           version: 4
-          metric: network:eth0
-          chart: false
+          metric: network:ens17
+          chart: true
     - 磁盘使用率:
         widget:
           type: glances

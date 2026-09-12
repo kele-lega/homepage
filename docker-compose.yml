@@ -15,6 +15,10 @@ services:
       - .env
     environment:
       SESSION_SECRET: ${SESSION_SECRET}
+      AUTH_USERS_FILE: /app/data/users.json
+      AUTH_ADMIN_USER: kele
+    volumes:
+      - ./auth-service/data:/app/data
     restart: unless-stopped
 
   homepage:
@@ -30,6 +34,10 @@ services:
       - ./public:/app/public
       - ./entrypoint.sh:/custom-entrypoint.sh:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    extra_hosts:
+      # network_mode: host 后 compose DNS 不再解析 glances 名；
+      # host-gateway 指向 docker0（本机 172.17.0.1），与 glances 的 -B 一致。
+      - "glances:host-gateway"
     environment:
       HOMEPAGE_ALLOWED_HOSTS: localhost,localhost:3000,127.0.0.1,127.0.0.1:3000,103.79.186.22,103.117.121.62,kelelega.dpdns.org
     restart: unless-stopped
@@ -37,21 +45,20 @@ services:
       - glances
 
   # 系统监控数据源：为 Homepage 的 glances widget 提供 REST API
-  # 同机部署，Homepage 通过 http://glances:61208 访问
-  # pid: host 让 glances 采集宿主机的真实 CPU/网卡/内存数据
+  # pid: host 采宿主机 CPU/内存/进程；network_mode: host 采宿主机网卡（ens17）
+  # API 只绑 docker0，不对外网开放 61208。Homepage 经 extra_hosts 访问 glances:61208
   glances:
     image: nicolargo/glances:latest
     container_name: glances
     pid: host
-    expose:
-      - "61208"
+    network_mode: host
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # 挂载宿主机根分区（只读），让 glances 能看到真实的磁盘使用率
       - /:/host:ro
     environment:
-      # 开 Web API 模式（-w），监听 61208；不开认证
-      GLANCES_OPT: "-w"
+      # 开 Web API 模式（-w）；-B 绑 docker0，避免 0.0.0.0 把无认证 API 暴露到公网
+      GLANCES_OPT: "-w -B 172.17.0.1"
     restart: unless-stopped
 
   # iCal 中转代理：解决 Homepage Node fetch 默认 UA 被 Google 当 bot 拒绝的问题

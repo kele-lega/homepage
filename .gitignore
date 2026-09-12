@@ -12,6 +12,8 @@ fund-monitor/data/users/*/cache.json
 fund-monitor/data/*.tmp
 ical-proxy/data/users.json
 ical-proxy/data/*.tmp
+auth-service/data/users.json
+auth-service/data/*.tmp
 __pycache__/
 
 # 独立项目，不纳入 homepage 仓库

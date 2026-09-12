@@ -554,6 +554,7 @@
 
   var CARD_ID = "ios-fund";
   var GROUP_ID = "ios-fund-group";
+  var FUND_PANEL_KEY = "homepage-fund-panel";
   var POLL_MS = 30000; // 前端只是读缓存，间隔可以比后端抓取更短
 
   // 后端地址在生产/本地不一样，而本地 homepage 端口还可能被改（3000/3001/…），
@@ -609,9 +610,32 @@
 
   var state = { funds: [], lastRefresh: null, lastError: null, netError: null, loaded: false };
   var calendar = { loaded: false, configured: false, url: "", draft: "", message: "", busy: false, operation: 0, request: 0 };
-  var account = { loaded: false, user: "", message: "", busy: false, operation: 0, request: 0 };
+  var account = {
+    loaded: false,
+    user: "",
+    admin: false,
+    message: "",
+    busy: false,
+    operation: 0,
+    request: 0,
+    users: [],
+    usersLoaded: false,
+    usersMessage: "",
+    usersBusy: false,
+    newUser: "",
+    newPassword: "",
+    currentPassword: "",
+    newSelfPassword: "",
+    confirmPassword: "",
+    passwordMessage: "",
+    passwordBusy: false,
+    resetUser: "",
+    resetPassword: "",
+  };
   var accountSession = 0;
+  var fundPanelEnabled = true;
   var draft = ""; // 输入框内容，React 重渲染冲掉卡片后不丢
+  var SETTINGS_LABELS = { calendar: "日历", panel: "面板", account: "账号", users: "账号管理" };
   var settingsOpen = false;
   var settingsPhase = "closed";
   var settingsSection = "calendar";
@@ -651,6 +675,147 @@
         return body;
       });
     });
+  }
+
+  function authApi(path, options) {
+    return fetch(path, Object.assign({ cache: "no-store", credentials: "same-origin" }, options || {})).then(function (resp) {
+      return resp.json().then(function (body) {
+        if (!resp.ok) throw new Error((body && body.error) || "HTTP " + resp.status);
+        return body;
+      }, function () {
+        throw new Error("HTTP " + resp.status);
+      });
+    });
+  }
+
+  function fundPanelStorageKey() {
+    return FUND_PANEL_KEY + ":" + (account.user || "anon");
+  }
+
+  function readFundPanelEnabled() {
+    if (!account.user) return true;
+    try {
+      var stored = window.localStorage.getItem(fundPanelStorageKey());
+      if (stored === "off") return false;
+      if (stored === "on") return true;
+    } catch (error) {
+      // Private browsing should keep the default visible panel.
+    }
+    return true;
+  }
+
+  function persistFundPanelEnabled(enabled) {
+    if (!account.user) return;
+    try {
+      window.localStorage.setItem(fundPanelStorageKey(), enabled ? "on" : "off");
+    } catch (error) {
+      // Ignore storage failures; the current page still updates.
+    }
+  }
+
+  function groupByName(name) {
+    var groups = document.getElementById("layout-groups");
+    if (!groups) return null;
+    var nodes = groups.querySelectorAll(".services-group");
+    for (var i = 0; i < nodes.length; i++) {
+      var title = nodes[i].querySelector(".service-group-name");
+      if (title && title.textContent.trim() === name) return nodes[i];
+    }
+    return null;
+  }
+
+  function applyLayoutColumns() {
+    var groups = document.getElementById("layout-groups");
+    if (!groups) return;
+    var visible = 0;
+    Array.prototype.forEach.call(groups.children, function (node) {
+      if (node.classList && node.classList.contains("services-group") && !node.hidden) visible += 1;
+    });
+    groups.classList.remove("layout-cols-2", "layout-cols-3", "layout-cols-4");
+    if (visible <= 2) groups.classList.add("layout-cols-2");
+    else if (visible === 3) groups.classList.add("layout-cols-3");
+    else groups.classList.add("layout-cols-4");
+  }
+
+  function hideEmptyFundShell(group) {
+    if (!group) return;
+    group.classList.add("ios-fund-group", "self-start");
+    var panel = group.querySelector('[id^="headlessui-disclosure-panel"]');
+    var panelHasFund = panel && (panel.contains(mounted) || panel.querySelector("#" + CARD_ID + "-item"));
+    if (panel && !panelHasFund) {
+      panel.style.setProperty("display", "none", "important");
+      panel.style.setProperty("height", "0", "important");
+      panel.style.setProperty("min-height", "0", "important");
+      panel.style.setProperty("margin", "0", "important");
+      panel.style.setProperty("padding", "0", "important");
+      panel.style.setProperty("overflow", "hidden", "important");
+    }
+    Array.prototype.forEach.call(group.querySelectorAll(".services-list"), function (list) {
+      if (list.contains(mounted) || list.querySelector("#" + CARD_ID + "-item")) return;
+      if (list.querySelector("li.service") && list.querySelector("li.service").id !== CARD_ID + "-item") return;
+      list.style.setProperty("display", "none", "important");
+      list.style.setProperty("height", "0", "important");
+      list.style.setProperty("margin", "0", "important");
+    });
+  }
+
+  function fundItem(group) {
+    var lists = group.querySelectorAll(".services-list");
+    var list = null;
+    for (var i = 0; i < lists.length; i++) {
+      if (lists[i].querySelector("#" + CARD_ID + "-item") || !lists[i].querySelector("li.service")) {
+        list = lists[i];
+        break;
+      }
+    }
+    if (!list) {
+      list = el("ul", "flex flex-col services-list");
+      group.appendChild(list);
+    }
+    list.classList.add("flex", "flex-col", "mt-3", "services-list");
+    ["display", "height", "min-height", "margin", "padding", "overflow"].forEach(function (prop) {
+      list.style.removeProperty(prop);
+    });
+    var item = document.getElementById(CARD_ID + "-item");
+    if (!item) {
+      item = el("li", "service");
+      item.id = CARD_ID + "-item";
+      item.setAttribute("data-name", "基金净值");
+    }
+    if (item.parentElement !== list) list.appendChild(item);
+    return item;
+  }
+
+  function applyRoleLayout() {
+    var ding = groupByName("丁");
+    if (ding) ding.hidden = !account.admin;
+    var yi = groupByName("乙") || document.getElementById(GROUP_ID);
+    if (yi) {
+      yi.hidden = !fundPanelEnabled;
+      if (!yi.hidden) hideEmptyFundShell(yi);
+    }
+    if (mounted) {
+      var parentGroup = mounted.closest(".services-group");
+      if (parentGroup) hideEmptyFundShell(parentGroup);
+    }
+    applyLayoutColumns();
+  }
+
+  function unmountFund() {
+    document.querySelectorAll("#" + GROUP_ID + ", #" + CARD_ID + "-item, #" + CARD_ID).forEach(function (node) {
+      node.remove();
+    });
+    mounted = null;
+    applyRoleLayout();
+  }
+
+  function setFundPanelEnabled(enabled) {
+    fundPanelEnabled = !!enabled;
+    persistFundPanelEnabled(fundPanelEnabled);
+    if (fundPanelEnabled) mount();
+    else unmountFund();
+    applyRoleLayout();
+    syncAccountSettings();
   }
 
   function createStatefulButton(label, className) {
@@ -780,7 +945,17 @@
       .then(function (data) {
         if (request !== account.request || session !== accountSession) return;
         account.user = typeof data.user === "string" ? data.user : "";
+        account.admin = data.admin === true;
         account.loaded = true;
+        fundPanelEnabled = readFundPanelEnabled();
+        applyRoleLayout();
+        if (fundPanelEnabled) mount();
+        else unmountFund();
+        if (account.admin) loadManagedUsers();
+        else {
+          account.users = [];
+          account.usersLoaded = true;
+        }
         renderSettings();
       })
       .catch(function (err) {
@@ -862,6 +1037,15 @@
         account.busy = false;
         account.loaded = false;
         account.user = "";
+        account.admin = false;
+        account.users = [];
+        account.usersLoaded = false;
+        account.currentPassword = "";
+        account.newSelfPassword = "";
+        account.confirmPassword = "";
+        account.passwordMessage = "";
+        account.resetUser = "";
+        account.resetPassword = "";
         account.message = "已退出登录";
         accountSession += 1;
         calendar.request += 1;
@@ -876,6 +1060,151 @@
         }
         throw err;
       });
+  }
+
+  function loadManagedUsers() {
+    if (!account.admin) return Promise.resolve();
+    account.usersMessage = "";
+    return authApi("/auth/users").then(function (data) {
+      account.users = Array.isArray(data.users) ? data.users : [];
+      account.usersLoaded = true;
+      renderSettings();
+    }).catch(function (err) {
+      account.usersLoaded = true;
+      account.usersMessage = "读取账号列表失败：" + err.message;
+      renderSettings();
+    });
+  }
+
+  function createManagedUser() {
+    if (account.usersBusy) return Promise.reject(new Error("账号操作正在进行"));
+    var username = (account.newUser || "").trim();
+    var password = account.newPassword || "";
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(username)) {
+      return Promise.reject(new Error("用户名只能包含字母、数字、点、下划线或短横线"));
+    }
+    if (password.length < 8) {
+      return Promise.reject(new Error("密码长度需要至少 8 个字符"));
+    }
+    account.usersBusy = true;
+    account.usersMessage = "创建中…";
+    renderSettings();
+    return authApi("/auth/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: username, password: password }),
+    }).then(function (data) {
+      account.newUser = "";
+      account.newPassword = "";
+      account.usersBusy = false;
+      account.usersMessage = "已创建账号 " + ((data.user && data.user.user) || username);
+      return loadManagedUsers();
+    }).catch(function (err) {
+      account.usersBusy = false;
+      account.usersMessage = "创建失败：" + err.message;
+      renderSettings();
+      throw err;
+    });
+  }
+
+  function deleteManagedUser(username) {
+    if (account.usersBusy) return Promise.reject(new Error("账号操作正在进行"));
+    account.usersBusy = true;
+    account.usersMessage = "删除中…";
+    renderSettings();
+    return authApi("/auth/users", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: username }),
+    }).then(function () {
+      account.usersBusy = false;
+      account.usersMessage = "已删除账号 " + username;
+      return loadManagedUsers();
+    }).catch(function (err) {
+      account.usersBusy = false;
+      account.usersMessage = "删除失败：" + err.message;
+      renderSettings();
+      throw err;
+    });
+  }
+
+  function settingsSections() {
+    var keys = ["calendar", "panel", "account"];
+    if (account.admin) keys.push("users");
+    return keys;
+  }
+
+  function changeOwnPassword() {
+    if (account.passwordBusy) return Promise.reject(new Error("密码修改正在进行"));
+    var current = account.currentPassword || "";
+    var next = account.newSelfPassword || "";
+    var confirm = account.confirmPassword || "";
+    if (next.length < 8) return Promise.reject(new Error("新密码长度需要至少 8 个字符"));
+    if (next !== confirm) return Promise.reject(new Error("两次输入的新密码不一致"));
+    account.passwordBusy = true;
+    account.passwordMessage = "保存中…";
+    renderSettings();
+    return authApi("/auth/password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ current_password: current, new_password: next }),
+    }).then(function () {
+      account.currentPassword = "";
+      account.newSelfPassword = "";
+      account.confirmPassword = "";
+      account.passwordBusy = false;
+      account.passwordMessage = "密码已更新";
+      renderSettings();
+    }).catch(function (err) {
+      account.passwordBusy = false;
+      account.passwordMessage = "修改失败：" + err.message;
+      renderSettings();
+      throw err;
+    });
+  }
+
+  function resetManagedPassword(username, password) {
+    if (account.usersBusy) return Promise.reject(new Error("账号操作正在进行"));
+    if (!username) return Promise.reject(new Error("请选择要改密的账号"));
+    if ((password || "").length < 8) return Promise.reject(new Error("新密码长度需要至少 8 个字符"));
+    account.usersBusy = true;
+    account.usersMessage = "修改密码中…";
+    renderSettings();
+    return authApi("/auth/password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: username, new_password: password }),
+    }).then(function () {
+      account.resetPassword = "";
+      account.usersBusy = false;
+      account.usersMessage = "已更新 " + username + " 的密码";
+      renderSettings();
+    }).catch(function (err) {
+      account.usersBusy = false;
+      account.usersMessage = "改密失败：" + err.message;
+      renderSettings();
+      throw err;
+    });
+  }
+
+  function addFundCode(code) {
+    if (!/^\d{6}$/.test(code)) return Promise.reject(new Error("请输入 6 位基金代码"));
+    return api("/api/funds", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: code }),
+    }).then(function () {
+      draft = "";
+      state.netError = null;
+      return load();
+    });
+  }
+
+  function removeFundCode(code) {
+    return api("/api/funds/" + code, { method: "DELETE" }).then(function () {
+      state.netError = null;
+      return load();
+    });
   }
 
   function buildCalendarSettings() {
@@ -928,13 +1257,106 @@
     return { node: wrap, input: input, save: save, clear: clear, message: message };
   }
 
+  function buildPanelSettings() {
+    var wrap = el("div", "ios-settings-panel ios-settings-panel-panel");
+    wrap.id = "ios-settings-panel-panel";
+    wrap.setAttribute("role", "tabpanel");
+    wrap.appendChild(el("div", "ios-settings-section-title", "基金净值"));
+    wrap.appendChild(el("p", "ios-settings-panel-description", "关闭后整块乙组不再显示，其余分组会自动补齐。"));
+    var panelRow = el("label", "ios-settings-toggle-row");
+    var panelToggle = document.createElement("input");
+    panelToggle.type = "checkbox";
+    panelToggle.className = "ios-settings-switch";
+    panelToggle.setAttribute("aria-label", "显示基金净值");
+    panelToggle.addEventListener("change", function () {
+      setFundPanelEnabled(panelToggle.checked);
+    });
+    panelRow.appendChild(panelToggle);
+    panelRow.appendChild(el("span", "", "显示基金净值"));
+    wrap.appendChild(panelRow);
+
+    wrap.appendChild(el("div", "ios-settings-section-title", "基金代码"));
+    var list = el("div", "ios-settings-fund-list");
+    var form = el("form", "ios-settings-user-form");
+    var input = el("input", "ios-fund-calendar-input");
+    input.type = "text";
+    input.inputMode = "numeric";
+    input.maxLength = 6;
+    input.placeholder = "6 位基金代码";
+    input.setAttribute("aria-label", "基金代码");
+    input.addEventListener("input", function () {
+      input.value = input.value.replace(/\D/g, "").slice(0, 6);
+      draft = input.value;
+    });
+    var add = createStatefulButton("添加", "ios-settings-add-fund");
+    add.type = "submit";
+    form.appendChild(input);
+    form.appendChild(add);
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var code = input.value.trim();
+      add.run(function () { return addFundCode(code); }, function (err) {
+        state.netError = "添加失败：" + err.message;
+        renderSettings();
+      }, function () {
+        draft = "";
+        renderSettings();
+      });
+    });
+    var message = el("div", "ios-settings-account-message");
+    message.setAttribute("role", "status");
+    wrap.appendChild(list);
+    wrap.appendChild(form);
+    wrap.appendChild(message);
+    return { node: wrap, panelToggle: panelToggle, fundsList: list, fundInput: input, addFund: add, fundMessage: message };
+  }
+
   function buildAccountSettings() {
     var wrap = el("div", "ios-settings-panel ios-settings-account-panel");
     wrap.id = "ios-settings-account-panel";
     wrap.setAttribute("role", "tabpanel");
     wrap.appendChild(el("div", "ios-settings-section-title", "当前账号"));
     var user = el("div", "ios-settings-user", "加载中…");
-    var description = el("p", "ios-settings-panel-description", "退出后需要重新登录才能访问此站点。");
+    var role = el("div", "ios-settings-role");
+    var description = el("p", "ios-settings-panel-description", "退出后需要重新登录才能访问此站点。修改密码需要验证原密码。");
+    wrap.appendChild(user);
+    wrap.appendChild(role);
+    wrap.appendChild(description);
+
+    var form = el("form", "ios-settings-password-form");
+    var current = el("input", "ios-fund-calendar-input");
+    current.type = "password";
+    current.autocomplete = "current-password";
+    current.placeholder = "原密码";
+    current.setAttribute("aria-label", "原密码");
+    current.addEventListener("input", function () { account.currentPassword = current.value; });
+    var next = el("input", "ios-fund-calendar-input");
+    next.type = "password";
+    next.autocomplete = "new-password";
+    next.placeholder = "新密码，至少 8 位";
+    next.setAttribute("aria-label", "新密码");
+    next.addEventListener("input", function () { account.newSelfPassword = next.value; });
+    var confirm = el("input", "ios-fund-calendar-input");
+    confirm.type = "password";
+    confirm.autocomplete = "new-password";
+    confirm.placeholder = "再次输入新密码";
+    confirm.setAttribute("aria-label", "确认新密码");
+    confirm.addEventListener("input", function () { account.confirmPassword = confirm.value; });
+    var save = createStatefulButton("修改密码", "ios-settings-change-password");
+    save.type = "submit";
+    form.appendChild(current);
+    form.appendChild(next);
+    form.appendChild(confirm);
+    form.appendChild(save);
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      save.run(changeOwnPassword, function () {}, function () {});
+    });
+    var passwordMessage = el("div", "ios-settings-account-message");
+    passwordMessage.setAttribute("role", "status");
+    wrap.appendChild(form);
+    wrap.appendChild(passwordMessage);
+
     var logoutButton = createStatefulButton("退出登录", "ios-settings-logout");
     var message = el("div", "ios-settings-account-message");
     message.setAttribute("role", "status");
@@ -942,18 +1364,94 @@
     logoutButton.addEventListener("click", function () {
       logoutButton.run(logout, function (err) {
         account.busy = false;
-        syncAccountSettings();
         account.message = "退出登录失败：" + err.message;
         syncAccountSettings();
       }, null, function () {
         window.location.replace("/login-v2/");
       });
     });
-    wrap.appendChild(user);
-    wrap.appendChild(description);
     wrap.appendChild(logoutButton);
     wrap.appendChild(message);
-    return { node: wrap, user: user, logout: logoutButton, message: message };
+    return {
+      node: wrap,
+      user: user,
+      role: role,
+      logout: logoutButton,
+      message: message,
+      currentPassword: current,
+      newSelfPassword: next,
+      confirmPassword: confirm,
+      changePassword: save,
+      passwordMessage: passwordMessage,
+    };
+  }
+
+  function buildUsersSettings() {
+    var wrap = el("div", "ios-settings-panel ios-settings-users-panel");
+    wrap.id = "ios-settings-users-panel";
+    wrap.setAttribute("role", "tabpanel");
+    wrap.appendChild(el("div", "ios-settings-section-title", "账号管理"));
+    wrap.appendChild(el("p", "ios-settings-panel-description", "仅管理员可以添加、删除普通账号，或直接修改其他账号密码。管理员账号 kele 不能删除。"));
+    var list = el("div", "ios-settings-user-list");
+    var form = el("form", "ios-settings-user-form");
+    var username = el("input", "ios-fund-calendar-input");
+    username.autocomplete = "off";
+    username.placeholder = "新用户名";
+    username.setAttribute("aria-label", "新用户名");
+    username.addEventListener("input", function () { account.newUser = username.value; });
+    var password = el("input", "ios-fund-calendar-input");
+    password.type = "password";
+    password.autocomplete = "new-password";
+    password.placeholder = "至少 8 位密码";
+    password.setAttribute("aria-label", "新账号密码");
+    password.addEventListener("input", function () { account.newPassword = password.value; });
+    var create = createStatefulButton("添加账号", "ios-settings-create-user");
+    create.type = "submit";
+    form.appendChild(username);
+    form.appendChild(password);
+    form.appendChild(create);
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      create.run(createManagedUser, function () {}, function () {});
+    });
+    var resetForm = el("form", "ios-settings-user-form");
+    var resetUser = el("input", "ios-fund-calendar-input");
+    resetUser.autocomplete = "off";
+    resetUser.placeholder = "要改密的用户名";
+    resetUser.setAttribute("aria-label", "要改密的用户名");
+    resetUser.addEventListener("input", function () { account.resetUser = resetUser.value; });
+    var resetPassword = el("input", "ios-fund-calendar-input");
+    resetPassword.type = "password";
+    resetPassword.autocomplete = "new-password";
+    resetPassword.placeholder = "该账号的新密码";
+    resetPassword.setAttribute("aria-label", "其他账号新密码");
+    resetPassword.addEventListener("input", function () { account.resetPassword = resetPassword.value; });
+    var reset = createStatefulButton("修改密码", "ios-settings-reset-password");
+    reset.type = "submit";
+    resetForm.appendChild(resetUser);
+    resetForm.appendChild(resetPassword);
+    resetForm.appendChild(reset);
+    resetForm.addEventListener("submit", function (event) {
+      event.preventDefault();
+      reset.run(function () { return resetManagedPassword((account.resetUser || "").trim(), account.resetPassword); }, function () {}, function () {});
+    });
+    var usersMessage = el("div", "ios-settings-account-message");
+    usersMessage.setAttribute("role", "status");
+    wrap.appendChild(list);
+    wrap.appendChild(form);
+    wrap.appendChild(resetForm);
+    wrap.appendChild(usersMessage);
+    return {
+      node: wrap,
+      usersList: list,
+      newUser: username,
+      newPassword: password,
+      createUser: create,
+      resetUser: resetUser,
+      resetPassword: resetPassword,
+      resetPasswordButton: reset,
+      usersMessage: usersMessage,
+    };
   }
 
   function syncCalendarSettings() {
@@ -971,32 +1469,141 @@
     else settingsRefs.message.textContent = "尚未配置日历";
   }
 
+  function idleButton(button, disabled) {
+    if (!button) return;
+    if (button.dataset.state !== "loading" && button.dataset.state !== "done") button.disabled = !!disabled;
+  }
+
+  function syncValue(input, value) {
+    if (input && document.activeElement !== input) input.value = value || "";
+  }
+
+  function syncPanelSettings() {
+    if (!settingsRefs || !settingsRefs.panelToggle) return;
+    settingsRefs.panelToggle.checked = fundPanelEnabled;
+    syncValue(settingsRefs.fundInput, draft);
+    idleButton(settingsRefs.addFund, false);
+    if (settingsRefs.fundInput) settingsRefs.fundInput.disabled = false;
+    if (settingsRefs.fundMessage) {
+      settingsRefs.fundMessage.textContent = state.netError || (state.loaded ? "" : "加载基金列表…");
+    }
+    if (!settingsRefs.fundsList) return;
+    settingsRefs.fundsList.textContent = "";
+    if (!state.loaded) {
+      settingsRefs.fundsList.appendChild(el("div", "ios-settings-user-empty", "加载中…"));
+      return;
+    }
+    if (!state.funds.length) {
+      settingsRefs.fundsList.appendChild(el("div", "ios-settings-user-empty", "还没有监控的基金"));
+      return;
+    }
+    state.funds.forEach(function (fund) {
+      var row = el("div", "ios-settings-user-row");
+      row.appendChild(el("div", "ios-settings-user-name", (fund.name || "未知名称") + "  " + fund.code));
+      var remove = el("button", "ios-settings-user-delete", "删除");
+      remove.type = "button";
+      remove.disabled = false;
+      remove.addEventListener("click", function () {
+        remove.disabled = true;
+        removeFundCode(fund.code).catch(function (err) {
+          state.netError = "删除失败：" + err.message;
+          renderSettings();
+        });
+      });
+      row.appendChild(remove);
+      settingsRefs.fundsList.appendChild(row);
+    });
+  }
+
   function syncAccountSettings() {
     if (!settingsRefs || !settingsRefs.accountUser) return;
     settingsRefs.accountUser.textContent = account.loaded ? (account.user || "未知账号") : "加载中…";
-    if (settingsRefs.logout.dataset.state !== "loading" && settingsRefs.logout.dataset.state !== "done") {
-      settingsRefs.logout.disabled = account.busy;
+    if (settingsRefs.accountRole) {
+      settingsRefs.accountRole.textContent = account.loaded
+        ? (account.admin ? "管理员" : "普通用户")
+        : "";
     }
-    settingsRefs.accountMessage.textContent = account.message || (account.loaded ? "当前会话有效" : "");
+    idleButton(settingsRefs.logout, account.busy);
+    if (settingsRefs.accountMessage) {
+      settingsRefs.accountMessage.textContent = account.message || (account.loaded ? "当前会话有效" : "");
+    }
+    syncValue(settingsRefs.currentPassword, account.currentPassword);
+    syncValue(settingsRefs.newSelfPassword, account.newSelfPassword);
+    syncValue(settingsRefs.confirmPassword, account.confirmPassword);
+    idleButton(settingsRefs.changePassword, account.passwordBusy || !account.loaded);
+    if (settingsRefs.passwordMessage) settingsRefs.passwordMessage.textContent = account.passwordMessage || "";
+  }
+
+  function syncUsersSettings() {
+    if (!settingsRefs) return;
+    if (settingsRefs.usersTab) settingsRefs.usersTab.hidden = !account.admin;
+    if (settingsRefs.usersPanel) settingsRefs.usersPanel.hidden = !account.admin || settingsSection !== "users";
+    if (!account.admin) return;
+    syncValue(settingsRefs.newUser, account.newUser);
+    syncValue(settingsRefs.newPassword, account.newPassword);
+    syncValue(settingsRefs.resetUser, account.resetUser);
+    syncValue(settingsRefs.resetPassword, account.resetPassword);
+    idleButton(settingsRefs.createUser, account.usersBusy);
+    idleButton(settingsRefs.resetPasswordButton, account.usersBusy);
+    if (settingsRefs.usersMessage) {
+      settingsRefs.usersMessage.textContent = account.usersMessage || (!account.usersLoaded ? "加载账号列表…" : "");
+    }
+    if (!settingsRefs.usersList) return;
+    settingsRefs.usersList.textContent = "";
+    if (!account.usersLoaded) {
+      settingsRefs.usersList.appendChild(el("div", "ios-settings-user-empty", "加载中…"));
+      return;
+    }
+    if (!account.users.length) {
+      settingsRefs.usersList.appendChild(el("div", "ios-settings-user-empty", "暂无账号"));
+      return;
+    }
+    account.users.forEach(function (item) {
+      var row = el("div", "ios-settings-user-row");
+      row.appendChild(el("div", "ios-settings-user-name", item.user + (item.admin ? "（管理员）" : "")));
+      if (!item.admin) {
+        var remove = el("button", "ios-settings-user-delete", "删除");
+        remove.type = "button";
+        remove.disabled = account.usersBusy;
+        remove.addEventListener("click", function () { deleteManagedUser(item.user); });
+        var reset = el("button", "ios-settings-user-reset", "改密");
+        reset.type = "button";
+        reset.disabled = account.usersBusy;
+        reset.addEventListener("click", function () {
+          account.resetUser = item.user;
+          renderSettings();
+          if (settingsRefs.resetPassword) settingsRefs.resetPassword.focus();
+        });
+        row.appendChild(reset);
+        row.appendChild(remove);
+      }
+      settingsRefs.usersList.appendChild(row);
+    });
   }
 
   function syncSettingsSection() {
     if (!settingsRefs) return;
-    ["calendar", "account"].forEach(function (section) {
+    var keys = settingsSections();
+    if (keys.indexOf(settingsSection) < 0) settingsSection = "calendar";
+    Object.keys(settingsRefs.tabs).forEach(function (section) {
       var active = settingsSection === section;
+      var available = keys.indexOf(section) >= 0;
+      settingsRefs.tabs[section].hidden = !available;
       settingsRefs.tabs[section].setAttribute("aria-selected", String(active));
       settingsRefs.tabs[section].tabIndex = active ? 0 : -1;
-      settingsRefs.panels[section].hidden = !active;
+      settingsRefs.panels[section].hidden = !available || !active;
     });
     syncCalendarSettings();
+    syncPanelSettings();
     syncAccountSettings();
+    syncUsersSettings();
   }
 
   function selectSettingsSection(section, focus) {
-    if (section !== "calendar" && section !== "account") return;
+    if (settingsSections().indexOf(section) < 0) return;
     settingsSection = section;
     syncSettingsSection();
-    if (focus && settingsRefs) settingsRefs.tabs[section].focus();
+    if (focus && settingsRefs && settingsRefs.tabs[section]) settingsRefs.tabs[section].focus();
   }
 
   function buildCalendarDialog() {
@@ -1014,7 +1621,7 @@
     var copy = el("div");
     var title = el("h2", "ios-settings-dialog-title", "设置");
     title.id = "ios-settings-title";
-    var description = el("p", "ios-settings-dialog-description", "管理日历订阅与当前账号");
+    var description = el("p", "ios-settings-dialog-description", "管理日历、面板和账号");
     description.id = "ios-settings-description";
     copy.appendChild(title);
     copy.appendChild(description);
@@ -1031,8 +1638,8 @@
     nav.setAttribute("role", "tablist");
     nav.setAttribute("aria-label", "设置分类");
     var tabs = {};
-    ["calendar", "account"].forEach(function (section) {
-      var tab = el("button", "ios-settings-tab", section === "calendar" ? "日历" : "账号");
+    ["calendar", "panel", "account", "users"].forEach(function (section) {
+      var tab = el("button", "ios-settings-tab", SETTINGS_LABELS[section]);
       tab.type = "button";
       tab.id = "ios-settings-tab-" + section;
       tab.setAttribute("role", "tab");
@@ -1042,7 +1649,7 @@
       tabs[section] = tab;
     });
     nav.addEventListener("keydown", function (event) {
-      var keys = ["calendar", "account"];
+      var keys = settingsSections();
       var index = keys.indexOf(settingsSection);
       if (event.key === "ArrowRight" || event.key === "ArrowDown") index = (index + 1) % keys.length;
       else if (event.key === "ArrowLeft" || event.key === "ArrowUp") index = (index + keys.length - 1) % keys.length;
@@ -1057,10 +1664,16 @@
     var calendarContent = buildCalendarSettings();
     calendarContent.node.setAttribute("role", "tabpanel");
     calendarContent.node.setAttribute("aria-labelledby", "ios-settings-tab-calendar");
+    var panelContent = buildPanelSettings();
+    panelContent.node.setAttribute("aria-labelledby", "ios-settings-tab-panel");
     var accountContent = buildAccountSettings();
     accountContent.node.setAttribute("aria-labelledby", "ios-settings-tab-account");
+    var usersContent = buildUsersSettings();
+    usersContent.node.setAttribute("aria-labelledby", "ios-settings-tab-users");
     content.appendChild(calendarContent.node);
+    content.appendChild(panelContent.node);
     content.appendChild(accountContent.node);
+    content.appendChild(usersContent.node);
     layout.appendChild(content);
     dialog.appendChild(layout);
     settingsRefs = {
@@ -1068,12 +1681,46 @@
       save: calendarContent.save,
       clear: calendarContent.clear,
       message: calendarContent.message,
+      panelToggle: panelContent.panelToggle,
+      fundsList: panelContent.fundsList,
+      fundInput: panelContent.fundInput,
+      addFund: panelContent.addFund,
+      fundMessage: panelContent.fundMessage,
       logout: accountContent.logout,
       accountUser: accountContent.user,
+      accountRole: accountContent.role,
       accountMessage: accountContent.message,
+      currentPassword: accountContent.currentPassword,
+      newSelfPassword: accountContent.newSelfPassword,
+      confirmPassword: accountContent.confirmPassword,
+      changePassword: accountContent.changePassword,
+      passwordMessage: accountContent.passwordMessage,
+      usersTab: tabs.users,
+      usersPanel: usersContent.node,
+      usersList: usersContent.usersList,
+      newUser: usersContent.newUser,
+      newPassword: usersContent.newPassword,
+      createUser: usersContent.createUser,
+      resetUser: usersContent.resetUser,
+      resetPassword: usersContent.resetPassword,
+      resetPasswordButton: usersContent.resetPasswordButton,
+      usersMessage: usersContent.usersMessage,
       tabs: tabs,
-      panels: { calendar: calendarContent.node, account: accountContent.node },
-      buttons: [calendarContent.save, calendarContent.clear, accountContent.logout],
+      panels: {
+        calendar: calendarContent.node,
+        panel: panelContent.node,
+        account: accountContent.node,
+        users: usersContent.node,
+      },
+      buttons: [
+        calendarContent.save,
+        calendarContent.clear,
+        panelContent.addFund,
+        accountContent.logout,
+        accountContent.changePassword,
+        usersContent.createUser,
+        usersContent.resetPasswordButton,
+      ],
       handle: handle,
       close: close,
     };
@@ -1136,9 +1783,15 @@
 
   function focusSettings() {
     if (!settingsDialog) return;
-    var target = settingsRefs && settingsSection === "calendar" && !settingsRefs.input.disabled
+    var target = settingsRefs && settingsSection === "calendar" && settingsRefs.input && !settingsRefs.input.disabled
       ? settingsRefs.input
-      : settingsRefs && settingsSection === "account" ? settingsRefs.logout : settingsRefs && settingsRefs.close;
+      : settingsRefs && settingsSection === "panel" && settingsRefs.fundInput
+        ? settingsRefs.fundInput
+        : settingsRefs && settingsSection === "account" && settingsRefs.currentPassword
+          ? settingsRefs.currentPassword
+          : settingsRefs && settingsSection === "users" && settingsRefs.newUser
+            ? settingsRefs.newUser
+            : settingsRefs && settingsRefs.close;
     (target || settingsDialog).focus();
   }
 
@@ -1342,7 +1995,6 @@
     // 视觉上过长名称使用 CSS 省略号，悬停时仍可查看完整基金名称。
     name.title = fullName;
     nameLine.appendChild(name);
-    nameLine.appendChild(el("span", "ios-fund-code", fund.code));
     main.appendChild(nameLine);
 
     var meta = el("div", "ios-fund-meta");
@@ -1351,6 +2003,7 @@
     meta.appendChild(el("span", "ios-fund-date", fund.nav_date || "--"));
     main.appendChild(meta);
     row.appendChild(main);
+    row.appendChild(el("span", "ios-fund-code", fund.code));
 
     var trend = trendClass(fund.change_pct);
     var nums = el("div", "ios-fund-nums " + trend);
@@ -1363,74 +2016,7 @@
       nums.appendChild(el("div", "ios-fund-official", officialText));
     }
     row.appendChild(nums);
-
-    var del = el("button", "ios-fund-del", "×");
-    del.type = "button";
-    var label = "删除 " + (fund.name || fund.code);
-    del.setAttribute("aria-label", label);
-    del.title = label;
-    del.addEventListener("click", function () {
-      del.disabled = true;
-      api("/api/funds/" + fund.code, { method: "DELETE" })
-        .then(load)
-        .catch(function (err) {
-          del.disabled = false;
-          state.netError = "删除失败：" + err.message;
-          render();
-        });
-    });
-    row.appendChild(del);
     return row;
-  }
-
-  function buildAddForm() {
-    var form = el("form", "ios-fund-add");
-
-    var input = el("input", "ios-fund-input");
-    input.type = "text";
-    input.inputMode = "numeric";
-    input.maxLength = 6;
-    input.placeholder = "6 位基金代码";
-    input.setAttribute("aria-label", "基金代码");
-    input.value = draft;
-    input.addEventListener("input", function () {
-      // 只留数字，避免提交明显非法的值
-      input.value = input.value.replace(/\D/g, "").slice(0, 6);
-      draft = input.value;
-    });
-
-    var submit = el("button", "ios-fund-submit", "添加");
-    submit.type = "submit";
-
-    form.appendChild(input);
-    form.appendChild(submit);
-
-    form.addEventListener("submit", function (event) {
-      event.preventDefault();
-      var code = input.value.trim();
-      if (!/^\d{6}$/.test(code)) {
-        state.netError = "请输入 6 位基金代码";
-        render();
-        return;
-      }
-      submit.disabled = true;
-      api("/api/funds", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: code }),
-      })
-        .then(function () {
-          draft = "";
-          state.netError = null;
-          return load();
-        })
-        .catch(function (err) {
-          submit.disabled = false;
-          state.netError = "添加失败：" + err.message;
-          render();
-        });
-    });
-    return form;
   }
 
   function render() {
@@ -1469,14 +2055,13 @@
 
     var list = el("div", "ios-fund-list");
     if (state.loaded && !state.funds.length) {
-      list.appendChild(el("div", "ios-fund-empty", "还没有监控的基金，输入代码添加"));
+      list.appendChild(el("div", "ios-fund-empty", "还没有监控的基金，可在设置的面板中添加"));
     } else {
       state.funds.forEach(function (fund) {
         list.appendChild(buildRow(fund));
       });
     }
     body.appendChild(list);
-    body.appendChild(buildAddForm());
     mounted.appendChild(body);
   }
 
@@ -1489,32 +2074,34 @@
         state.netError = null;
         state.loaded = true;
         render();
+        renderSettings();
       })
       .catch(function (err) {
         // 拉不到就沿用上一次的数据，只加一行错误说明
         state.netError = "读取监控服务失败：" + err.message;
         state.loaded = true;
         render();
+        renderSettings();
       });
   }
 
   // Homepage 的 services API 会过滤空服务组，因此乙没有原生服务时由这里补一个
   // 同结构的宿主。宿主只包含标题和基金卡片，不创建可点击的占位服务。
   function insertionPoint() {
+    if (!fundPanelEnabled) return null;
     var groups = document.getElementById("layout-groups");
     if (!groups) return null;
 
-    var serviceGroups = groups.querySelectorAll(".services-group:not(.ios-fund-group)");
+    var serviceGroups = groups.querySelectorAll(".services-group");
     for (var i = 0; i < serviceGroups.length; i++) {
+      if (serviceGroups[i].id === GROUP_ID) continue;
       var title = serviceGroups[i].querySelector(".service-group-name");
       if (title && title.textContent.trim() === "乙") {
         document.querySelectorAll("#" + GROUP_ID).forEach(function (node) {
           node.remove();
         });
-        var panel = serviceGroups[i].querySelector('[id^="headlessui-disclosure-panel"]');
-        if (panel) return { parent: panel, before: null };
-        var services = serviceGroups[i].querySelector(".services-list");
-        if (services && services.parentElement) return { parent: services.parentElement, before: null };
+        hideEmptyFundShell(serviceGroups[i]);
+        return { parent: fundItem(serviceGroups[i]), before: null };
       }
     }
 
@@ -1525,10 +2112,20 @@
     if (host && host.parentElement !== groups) host.remove();
     host = groups.querySelector("#" + GROUP_ID);
     if (!host) {
-      host = el("div", "services-group ios-fund-group flex-1 basis-full md:basis-1/2 lg:basis-1/3 xl:basis-1/4 p-1 pb-0");
+      host = el("div", "services-group ios-fund-group flex-1 basis-full md:basis-1/2 lg:basis-1/3 xl:basis-1/4 p-1 pb-0 self-start");
       host.id = GROUP_ID;
-      var heading = el("h2", "flex text-theme-800 dark:text-theme-300 text-xl font-medium service-group-name", "乙");
-      host.appendChild(heading);
+    }
+    var heading = host.querySelector(".service-group-name");
+    if (!heading) {
+      heading = el("h2", "flex text-theme-800 dark:text-theme-300 text-xl font-medium service-group-name", "乙");
+    }
+    var header = heading.closest(".group") || heading.parentElement;
+    if (!header || header === host) {
+      header = el("div", "flex w-full select-none items-center group");
+      header.appendChild(heading);
+    }
+    if (header.parentElement !== host) {
+      host.insertBefore(header, host.firstChild);
     }
 
     var before = null;
@@ -1542,7 +2139,11 @@
     if (host.parentElement !== groups || host.nextElementSibling !== before) {
       groups.insertBefore(host, before);
     }
-    return { parent: host, before: null };
+    host.classList.add("self-start");
+    hideEmptyFundShell(host);
+    host.hidden = !fundPanelEnabled;
+    applyRoleLayout();
+    return { parent: fundItem(host), before: null };
   }
 
   function settingsPoint() {
@@ -1596,6 +2197,11 @@
   }
 
   function mount() {
+    applyRoleLayout();
+    if (!fundPanelEnabled) {
+      unmountFund();
+      return false;
+    }
     var point = insertionPoint();
     if (!point) return false;
 
@@ -1603,15 +2209,17 @@
       if (mounted.parentElement !== point.parent || mounted.nextElementSibling !== point.before) {
         point.parent.insertBefore(mounted, point.before);
       }
+      applyRoleLayout();
       return true;
     }
 
-    var node = el("div", "ios-fund");
+    var node = el("div", "service-card ios-fund mb-2 rounded-md shadow-md");
     node.id = CARD_ID;
     point.parent.insertBefore(node, point.before);
     mounted = node;
     render();
     load();
+    applyRoleLayout();
     return true;
   }
 
@@ -1622,13 +2230,16 @@
     if (inited) return;
     inited = true;
 
-    mount();
     mountSettings();
+    loadAccount();
+    load();
+    mount();
 
     // React 水合/重渲染可能把卡片冲掉，持续守护并按需重新插入
     var obs = new MutationObserver(function () {
-      mount();
       mountSettings();
+      if (fundPanelEnabled) mount();
+      else applyRoleLayout();
     });
     obs.observe(document.documentElement, { childList: true, subtree: true });
 
@@ -1650,5 +2261,123 @@
   } else {
     init();
   }
+})();
+
+/* ============ 主题：仅保留明暗模式并同步原生颜色 ============ */
+(function () {
+  "use strict";
+
+  var STORAGE_KEY = "theme-mode";
+  var CONTROLLER_KEY = "__homepageLightDarkThemeController";
+  var root = document.documentElement;
+  var palettePrefix = "theme-";
+  var mode = "dark";
+  var syncScheduled = false;
+  var applying = false;
+
+  if (!root || window[CONTROLLER_KEY]) return;
+  window[CONTROLLER_KEY] = true;
+
+  function normalizeMode(value) {
+    return value === "light" ? "light" : "dark";
+  }
+
+  function readStoredMode() {
+    try {
+      return normalizeMode(window.localStorage.getItem(STORAGE_KEY));
+    } catch (error) {
+      return "dark";
+    }
+  }
+
+  function persistMode(value) {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, value);
+    } catch (error) {
+      // Private browsing or a blocked storage backend must not break the page.
+    }
+  }
+
+  function modeFromRoot() {
+    if (root.classList.contains("light") || root.classList.contains("scheme-light")) {
+      return "light";
+    }
+    if (root.classList.contains("dark") || root.classList.contains("scheme-dark")) {
+      return "dark";
+    }
+    return null;
+  }
+
+  function expectedColor(value) {
+    return value === "light" ? "theme-white" : "theme-slate";
+  }
+
+  function needsSync(value) {
+    var color = expectedColor(value);
+    var expectedScheme = value === "light" ? "scheme-light" : "scheme-dark";
+    if (!root.classList.contains(value) || !root.classList.contains(expectedScheme) ||
+        !root.classList.contains(color)) return true;
+
+    return Array.prototype.some.call(root.classList, function (name) {
+      return name.indexOf(palettePrefix) === 0 && name !== color;
+    }) || root.classList.contains(value === "light" ? "dark" : "light") ||
+      root.classList.contains(value === "light" ? "scheme-dark" : "scheme-light");
+  }
+
+  function applyMode(value) {
+    value = normalizeMode(value);
+    if (!needsSync(value)) return;
+
+    var color = expectedColor(value);
+    applying = true;
+    Array.prototype.slice.call(root.classList).forEach(function (name) {
+      if (name === "dark" || name === "light" || name === "scheme-dark" ||
+          name === "scheme-light" || name.indexOf(palettePrefix) === 0) {
+        root.classList.remove(name);
+      }
+    });
+    root.classList.add(value, value === "light" ? "scheme-light" : "scheme-dark", color);
+    applying = false;
+  }
+
+  function reconcile() {
+    syncScheduled = false;
+    if (applying) return;
+
+    var detected = modeFromRoot();
+    if (detected) {
+      mode = detected;
+      persistMode(mode);
+    }
+    applyMode(mode);
+  }
+
+  function scheduleReconcile() {
+    if (syncScheduled) return;
+    syncScheduled = true;
+    if (typeof window.queueMicrotask === "function") {
+      window.queueMicrotask(reconcile);
+    } else {
+      Promise.resolve().then(reconcile);
+    }
+  }
+
+  mode = readStoredMode();
+  persistMode(mode);
+  applyMode(mode);
+
+  if (typeof MutationObserver === "function") {
+    var observer = new MutationObserver(function () {
+      scheduleReconcile();
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+  }
+
+  window.addEventListener("storage", function (event) {
+    if (event.key !== STORAGE_KEY) return;
+    mode = normalizeMode(event.newValue);
+    persistMode(mode);
+    applyMode(mode);
+  });
 })();
 
