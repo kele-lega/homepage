@@ -1,11 +1,4 @@
 services:
-  login-page:
-    build: ./login-page
-    container_name: login-page
-    expose:
-      - "80"
-    restart: unless-stopped
-
   auth-service:
     build: ./auth-service
     container_name: auth-service
@@ -17,22 +10,25 @@ services:
       SESSION_SECRET: ${SESSION_SECRET}
       AUTH_USERS_FILE: /app/data/users.json
       AUTH_ADMIN_USER: kele
+      # 账号存储保留，会话和登录/退出统一交给 Homepage 原生 NextAuth。
+      HOMEPAGE_SESSION_URL: http://homepage:3000/api/auth/session
+      AUTH_BRIDGE_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
     volumes:
       - ./auth-service/data:/app/data
     restart: unless-stopped
 
   homepage:
-    image: ghcr.io/gethomepage/homepage:latest
+    build: ./homepage-image
+    image: homepage-local:v2.4.0-1
     container_name: homepage
-    entrypoint: ["/custom-entrypoint.sh"]
-    command: ["node", "server.js"]
     # 生产不映射宿主机端口，由 Caddy 反代；本地端口见 docker-compose.override.yml
     expose:
       - "3000"
     volumes:
       - ./config:/app/config
-      - ./public:/app/public
-      - ./entrypoint.sh:/custom-entrypoint.sh:ro
+      # 只覆盖自有素材，不遮住新版自带的翻译、图标等资源。
+      - ./public/images:/app/public/images:ro
+      - ./public/webhead.ico:/app/public/webhead.ico:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     extra_hosts:
       # network_mode: host 后 compose DNS 不再解析 glances 名；
@@ -40,6 +36,13 @@ services:
       - "glances:host-gateway"
     environment:
       HOMEPAGE_ALLOWED_HOSTS: localhost,localhost:3000,127.0.0.1,127.0.0.1:3000,103.79.186.22,103.117.121.62,kelelega.dpdns.org
+      HOMEPAGE_AUTH_ENABLED: "true"
+      HOMEPAGE_AUTH_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      HOMEPAGE_EXTERNAL_URL: https://kelelega.dpdns.org
+      HOMEPAGE_CREDENTIALS_URL: http://auth-service:8080/internal/verify
+      HOMEPAGE_CREDENTIALS_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      HOMEPAGE_CALENDAR_ORIGIN: http://ical-proxy:8089
+      HOMEPAGE_MCP_ENABLED: "false"
     restart: unless-stopped
     depends_on:
       - glances
@@ -99,7 +102,25 @@ services:
       - FUND_REFRESH_SEC=${FUND_REFRESH_SEC:-60}
     restart: unless-stopped
 
-  # Caddy 反向代理：自动 HTTPS；认证由 auth-service 会话 Cookie 处理
+  # Steam 游戏时长：后台刷新近两周游戏、总时长和正在玩
+  # 只在内网暴露，浏览器经 caddy 的 /steam-monitor/* 同源访问
+  steam-monitor:
+    build: ./steam-monitor
+    container_name: steam-monitor
+    expose:
+      - "8091"
+    volumes:
+      - ./steam-monitor/data:/app/data
+    environment:
+      - STEAM_DATA_DIR=/app/data
+      - STEAM_HOST=0.0.0.0
+      - STEAM_PORT=8091
+      - STEAM_API_KEY=${STEAM_API_KEY:-}
+      - STEAM_ALLOW_ORIGIN=http://localhost:3000,http://127.0.0.1:3000
+      - STEAM_REFRESH_SEC=${STEAM_REFRESH_SEC:-300}
+    restart: unless-stopped
+
+  # Caddy 反向代理：自动 HTTPS；原生会话由 auth-service 桥接到各用户数据服务
   # 80/443 对外，内部反代到 homepage:3000
   caddy:
     image: caddy:2-alpine
@@ -117,6 +138,7 @@ services:
     depends_on:
       - homepage
       - fund-monitor
+      - steam-monitor
     networks:
       - default
       - life

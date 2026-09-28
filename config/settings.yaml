@@ -21,9 +21,15 @@ background:
   brightness: 50 # 0, 50, 75... see https://tailwindcss.com/docs/backdrop-brightness
   opacity: 50 # 0-100
 
+# 明暗壁纸。图片放 public/ 后只改路径，刷新页面即可。
+wallpapers:
+  dark: /images/background.png
+  light: /images/background-light.jpg
+
 layout:
   甲:
   乙:
+  游戏:
   丙:
   丁:
 

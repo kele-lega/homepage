@@ -7,7 +7,9 @@
 
 ## 1. .env 文件 — 云端手动创建
 
-当前部署使用多账号会话认证：管理员只有 `kele`，其余账号都是普通用户。Caddy 提供 HTTPS 入口，认证服务签发 HttpOnly 会话 Cookie；Caddy 校验会话后把 `X-Authenticated-User` 注入内部请求。账号的基金列表、缓存和日历配置按用户名分别隔离。只有 `kele` 能在设置里添加或删除普通账号，并看到丁组系统监控；乙组基金面板对所有账号都可以开关，关闭后整组隐藏，其余分组自动补齐。
+当前部署使用 Homepage v2.4.0 原生登录及多账号适配：管理员只有 `kele`，其余账号都是普通用户。Homepage NextAuth 签发 HttpOnly、Secure 会话 Cookie；`auth-service` 保留 bcrypt 账号存储和账号管理，通过内网查询原生会话。Caddy 清除客户端的 `X-Authenticated-User` 后注入已校验身份。基金、日历和 Steam 仍按原用户名隔离。只有 `kele` 能管理普通账号并看到丁组；乙组基金面板仍可按账号开关。
+
+当前构建和回滚流程见 `docs/UPGRADE-2026-09-28.md`。生产入口为 `/auth/signin`，旧 `/login-v2/` 自动跳转；旧登录容器不再部署。
 
 `.env` 不在 git 中（`.gitignore` 已忽略）。每个账号占一行，格式为“用户名 + bcrypt 哈希”：
 
@@ -16,6 +18,7 @@ AUTH_USERS="kele <kele 的现有 bcrypt 哈希>
 wzj <wzj 的新 bcrypt 哈希>"
 SESSION_SECRET=<使用 openssl rand -hex 32 生成的随机值>
 ICAL_UPSTREAM=https://calendar.google.com/calendar/ical/管理员token/public/basic.ics
+STEAM_API_KEY=<https://steamcommunity.com/dev/apikey 申请的 Web API Key>
 ```
 
 不要把真实密码、哈希、`SESSION_SECRET` 或日历 token 写入 Git，也不要发到聊天中。`SESSION_SECRET` 是必填项；可在服务器上执行 `openssl rand -hex 32` 生成。推荐在服务器上执行：
@@ -38,16 +41,17 @@ docker compose -f docker-compose.yml up -d --build auth-service caddy
 
 ## 2. HOMEPAGE_ALLOWED_HOSTS — 必须改为本机 IP/域名
 
-docker-compose.yml 第 15 行，当前写死了 IP：
+修改 `docker-compose.yml` 中的 `HOMEPAGE_ALLOWED_HOSTS`，域名需和 Caddy 站点、`HOMEPAGE_EXTERNAL_URL` 保持一致：
 
 ```yaml
-HOMEPAGE_ALLOWED_HOSTS: localhost:3001,127.0.0.1:3001,103.79.186.22:3001
+HOMEPAGE_ALLOWED_HOSTS: localhost:3000,127.0.0.1:3000,kelelega.dpdns.org
+HOMEPAGE_EXTERNAL_URL: https://kelelega.dpdns.org
 ```
 
 - 云端服务器：把 `103.79.186.22` 改成云端公网 IP（或域名）
-- Windows 本地调试：改成 `localhost:3001,127.0.0.1:3001` 即可，不需要公网 IP
+- Windows 本地调试：override 使用 `http://localhost:3000` 并关闭原生认证，不需要公网 IP
 
-如果改了 IP 忘了改这里，页面会返回 403 Forbidden。
+如果改了 IP 忘了改这里，页面会返回 Host validation failed。
 
 ---
 
@@ -130,9 +134,7 @@ API 绑定 `172.17.0.1:61208`（docker0），不监听公网。Homepage 用 `ext
 
 ## 6. 防火墙/端口 — 云端需开放，Windows 自动放行
 
-云端服务器需在安全组/防火墙放行：
-- 3001（homepage 主界面）
-- 61208（glances API，可选 — 仅调试时外部访问需要）
+云端服务器只需在安全组/防火墙放行 80、443。生产 Homepage、认证、基金、Steam 和日历不映射公网端口；Glances 仅绑定 docker0，不对外放行 61208。
 
 Windows 10 Docker Desktop 默认自动放行所有端口映射，无需手动配置防火墙。
 
@@ -174,10 +176,9 @@ docker compose ps
 # 2. iCal 代理健康检查
 docker compose exec ical-proxy python -c "from urllib.request import Request, urlopen; print(urlopen(Request('http://localhost:8089/basic.ics', headers={'X-Authenticated-User':'admin'})).read(80))"
 
-# 3. 生产基金接口（每个账号分别检查）
-curl -u admin:密码 https://kelelega.dpdns.org/fund-monitor/healthz
-curl -u wzj:密码 https://kelelega.dpdns.org/fund-monitor/healthz
-curl -u admin:密码 https://kelelega.dpdns.org/calendar/api/calendar
+# 3. 生产接口需先在浏览器用 /auth/signin 登录；不再支持 curl -u Basic Auth。
+# 登录后在开发者工具中确认 /auth/me、/fund-monitor/api/funds、
+# /calendar/api/calendar 和 /steam-monitor/api/steam 分别返回当前账号数据。
 ```
 
 ---
@@ -188,7 +189,7 @@ curl -u admin:密码 https://kelelega.dpdns.org/calendar/api/calendar
 
 ### 9.1 生产 vs 本地的访问路径不同
 
-生产由 Caddy 把 `/fund-monitor/*` 反代到 `fund-monitor:8090`（`handle_path` 会剥掉前缀），
+生产由 Caddy 校验会话后剥掉 `/fund-monitor` 前缀，再反代到 `fund-monitor:8090`，
 浏览器同源访问，不需要 CORS，服务也不对公网开端口。
 
 本地 `docker-compose.override.yml` 里 caddy 不启动、直接访问 `localhost:3000`，所以 override 额外做了两件事：把 8090 映射到宿主机，并设 `FUND_ALLOW_ORIGIN=http://localhost:3000` 只放开这一个来源。当前本地服务使用固定的 `FUND_DEFAULT_USER=local`；生产环境不要设置该变量，必须由 Caddy 注入认证用户名。

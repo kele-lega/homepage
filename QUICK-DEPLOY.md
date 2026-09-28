@@ -1,6 +1,6 @@
 # 最简部署
 
-同一台 Linux 服务器即可运行。现在支持多个登录账号，每个账号有独立的基金列表、基金缓存和日历。管理员只有 `kele`，可以管理其他账号并查看丁组；普通用户看不到丁组。乙组基金面板可在设置里开关。Caddy 负责 HTTPS 入口，认证服务签发会话 Cookie，并把当前用户名传给内部服务。
+同一台 Linux 服务器即可运行。支持多个登录账号，每个账号有独立的基金列表、基金缓存、日历和 Steam 绑定。管理员只有 `kele`，可以管理其他账号并查看丁组；普通用户看不到丁组。乙组基金面板可在设置里开关。Caddy 负责 HTTPS；Homepage v2.4.0 原生 NextAuth 签发会话 Cookie，`auth-service` 校验账号并把当前用户名桥接给内部服务。
 
 ## 0. 前置
 
@@ -29,9 +29,9 @@ SESSION_SECRET=<使用 openssl rand -hex 32 生成的随机值>
 ICAL_UPSTREAM=<管理员日历订阅地址>
 ```
 
-`SESSION_SECRET` 是必填项，且不要提交；可在服务器上运行 `openssl rand -hex 32` 生成。
+`SESSION_SECRET` 是必填项，至少 32 字符，且不要提交；可在服务器上运行 `openssl rand -hex 32` 生成。已有部署应保留原值。
 
-# 页面登录后，基金卡片右上角的「日历设置」可以保存或清除当前账号的地址。
+# 页面登录后，设置 →「日历」可以保存或清除当前账号的地址。
 # 也可预先手工创建配置文件；真实 token 不要提交 Git。
 
 启动生产配置（不要带 override）：
@@ -40,9 +40,11 @@ ICAL_UPSTREAM=<管理员日历订阅地址>
 docker compose -f docker-compose.yml up -d --build
 ```
 
-完成后访问 `https://kelelega.dpdns.org`。使用不同账号登录时，基金卡片和日历会分别读取各自数据。网页布局不变。
+完成后访问 `https://kelelega.dpdns.org`，自动进入原生 `/auth/signin`。使用现有用户名和密码登录；退出登录使用页面底部的原生按钮。
 
 ## 2. 日常更新
+
+Homepage 固定为 v2.4.0，通过 `homepage-image/` 构建多账号和日历兼容补丁。升级上游版本需要同步提交号、源码校验和、镜像标签及补丁断言；不要直接切回 `latest`。详见 `docs/UPGRADE-2026-09-28.md`。
 
 ```bash
 cd homepage && git pull && docker compose -f docker-compose.yml up -d --build
@@ -67,6 +69,6 @@ cd homepage && git pull && docker compose -f docker-compose.yml up -d --build
 ## 常见问题
 
 - **改了 `config/` 或 `Caddyfile` 不生效**：`docker compose -f docker-compose.yml restart`
-- **Caddy 启动失败并提示 calendar proxy patch target not found**：Homepage 镜像内部代理代码发生变化，需要检查新版本的日历代理调用后再更新 `entrypoint.sh`，不要跳过该检查
+- **镜像构建提示补丁目标不匹配**：检查新版源码并更新 `homepage-image/apply-patches.mjs`，不要跳过断言。现在不再修改 `.next` 编译文件。
 - **80/443 被占用**：`docker ps` 查是谁占了端口，先停掉
 - **更多细节**：`DEPLOYMENT-NOTES.md`、`MAINTENANCE.md`

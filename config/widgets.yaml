@@ -19,6 +19,5 @@
 
 - search:
     provider: [google, bing, duckduckgo, brave]
-    showSearchSuggestions: false
+    showSearchSuggestions: true
     target: _blank
-

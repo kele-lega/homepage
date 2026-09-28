@@ -1,81 +1,41 @@
 /**
- * 外网搜索联想：通过 Homepage API 获取候选词，最多显示 10 条。
+ * 明暗壁纸路径来自 settings.yaml 的 wallpapers.light / wallpapers.dark。
+ * 图片放 public/ 后只改 yaml 路径，刷新即可。
  */
 (function () {
   "use strict";
 
-  var SEARCH_SELECTOR = ".information-widget-search input";
-  var LIST_ID = "external-search-suggestions";
-  var timer = null;
-  var request = null;
-  var URLS = {
-    Google: "https://www.google.com/search?q=",
-    Bing: "https://www.bing.com/search?q=",
-    DuckDuckGo: "https://duckduckgo.com/?q=",
-    Brave: "https://search.brave.com/search?q=",
+  var DEFAULTS = {
+    dark: "/images/background.png",
+    light: "/images/background-light.jpg",
   };
 
-  function providerName() {
-    var stored = localStorage.getItem("search-name");
-    return URLS[stored] ? stored : "Google";
+  function sanitizePath(value) {
+    if (typeof value !== "string") return null;
+    var path = value.trim();
+    if (!path || path.length > 500) return null;
+    if (/["'\\]|url\s*\(/i.test(path)) return null;
+    if (path.charAt(0) === "/" && path.charAt(1) !== "/") return path;
+    if (/^https:\/\//i.test(path)) return path;
+    return null;
   }
 
-  function closeList() {
-    var list = document.getElementById(LIST_ID);
-    if (list) list.remove();
+  function readWallpapers() {
+    try {
+      var settings = window.__NEXT_DATA__.props.pageProps.initialSettings.wallpapers;
+      return {
+        dark: sanitizePath(settings && settings.dark) || DEFAULTS.dark,
+        light: sanitizePath(settings && settings.light) || DEFAULTS.light,
+      };
+    } catch (error) {
+      return DEFAULTS;
+    }
   }
 
-  function renderList(input, values) {
-    closeList();
-    if (!input.value.trim() || !values.length) return;
-    var list = document.createElement("div");
-    list.id = LIST_ID;
-    list.className = "external-search-suggestions";
-    list.setAttribute("role", "listbox");
-    values.slice(0, 10).forEach(function (value) {
-      var button = document.createElement("button");
-      button.type = "button";
-      button.className = "external-search-suggestion";
-      button.textContent = value;
-      button.setAttribute("role", "option");
-      button.addEventListener("mousedown", function (event) {
-        event.preventDefault();
-        window.open(URLS[providerName()] + encodeURIComponent(value), "_blank");
-        closeList();
-      });
-      list.appendChild(button);
-    });
-    var wrapper = input.closest(".information-widget-search");
-    if (wrapper) wrapper.appendChild(list);
-  }
-
-  function fetchSuggestions(input) {
-    var query = input.value.trim();
-    closeList();
-    if (!query) return;
-    if (request) request.abort();
-    request = new AbortController();
-    fetch("/api/search/searchSuggestion?query=" + encodeURIComponent(query) + "&providerName=" + providerName(), {
-      signal: request.signal,
-    })
-      .then(function (response) { return response.json(); })
-      .then(function (data) { if (data && Array.isArray(data[1])) renderList(input, data[1]); })
-      .catch(function () {});
-  }
-
-  function initSuggestions() {
-    var input = document.querySelector(SEARCH_SELECTOR);
-    if (!input || input.dataset.suggestionsReady) return;
-    input.dataset.suggestionsReady = "true";
-    input.addEventListener("input", function () {
-      clearTimeout(timer);
-      timer = setTimeout(function () { fetchSuggestions(input); }, 180);
-    });
-    input.addEventListener("blur", function () { setTimeout(closeList, 150); });
-  }
-
-  initSuggestions();
-  new MutationObserver(initSuggestions).observe(document.documentElement, { childList: true, subtree: true });
+  var wallpapers = readWallpapers();
+  var root = document.documentElement;
+  root.style.setProperty("--wallpaper-dark", 'url("' + wallpapers.dark + '")');
+  root.style.setProperty("--wallpaper-light", 'url("' + wallpapers.light + '")');
 })();
 
 /**
@@ -635,7 +595,7 @@
   var accountSession = 0;
   var fundPanelEnabled = true;
   var draft = ""; // 输入框内容，React 重渲染冲掉卡片后不丢
-  var SETTINGS_LABELS = { calendar: "日历", panel: "面板", account: "账号", users: "账号管理" };
+  var SETTINGS_LABELS = { calendar: "日历", panel: "面板", steam: "Steam", account: "账号", users: "账号管理" };
   var settingsOpen = false;
   var settingsPhase = "closed";
   var settingsSection = "calendar";
@@ -947,6 +907,10 @@
         account.user = typeof data.user === "string" ? data.user : "";
         account.admin = data.admin === true;
         account.loaded = true;
+        // Refresh this user's calendar after landing from the native login flow.
+        fetch("/calendar/api/calendar/refresh", {
+          method: "POST", cache: "no-store", credentials: "same-origin",
+        }).catch(function () {});
         fundPanelEnabled = readFundPanelEnabled();
         applyRoleLayout();
         if (fundPanelEnabled) mount();
@@ -1020,48 +984,6 @@
     });
   }
 
-  function logout() {
-    if (account.busy) return Promise.reject(new Error("退出登录正在进行"));
-    account.busy = true;
-    account.message = "退出登录中…";
-    var operation = ++account.operation;
-    renderSettings();
-    return fetch("/auth/logout", { method: "POST", cache: "no-store", credentials: "same-origin" })
-      .then(function (resp) {
-        return resp.json().then(function (body) {
-          if (!resp.ok) throw new Error((body && body.error) || "HTTP " + resp.status);
-          return body;
-        });
-      })
-      .then(function (body) {
-        account.busy = false;
-        account.loaded = false;
-        account.user = "";
-        account.admin = false;
-        account.users = [];
-        account.usersLoaded = false;
-        account.currentPassword = "";
-        account.newSelfPassword = "";
-        account.confirmPassword = "";
-        account.passwordMessage = "";
-        account.resetUser = "";
-        account.resetPassword = "";
-        account.message = "已退出登录";
-        accountSession += 1;
-        calendar.request += 1;
-        if (operation !== account.operation) return body;
-        renderSettings();
-        return body;
-      }).catch(function (err) {
-        if (operation === account.operation) {
-          account.busy = false;
-          account.message = "退出登录失败：" + err.message;
-          renderSettings();
-        }
-        throw err;
-      });
-  }
-
   function loadManagedUsers() {
     if (!account.admin) return Promise.resolve();
     account.usersMessage = "";
@@ -1129,7 +1051,7 @@
   }
 
   function settingsSections() {
-    var keys = ["calendar", "panel", "account"];
+    var keys = ["calendar", "panel", "steam", "account"];
     if (account.admin) keys.push("users");
     return keys;
   }
@@ -1153,7 +1075,8 @@
       account.newSelfPassword = "";
       account.confirmPassword = "";
       account.passwordBusy = false;
-      account.passwordMessage = "密码已更新";
+      account.passwordMessage = "密码已更新，请重新登录";
+      setTimeout(function () { window.location.replace("/auth/signin?autologin=0"); }, 800);
       renderSettings();
     }).catch(function (err) {
       account.passwordBusy = false;
@@ -1257,6 +1180,14 @@
     return { node: wrap, input: input, save: save, clear: clear, message: message };
   }
 
+
+  function buildSteamSettings() {
+    var wrap = el("div", "ios-settings-panel ios-settings-steam-panel");
+    wrap.id = "ios-settings-steam-panel";
+    wrap.setAttribute("role", "tabpanel");
+    return { node: wrap };
+  }
+
   function buildPanelSettings() {
     var wrap = el("div", "ios-settings-panel ios-settings-panel-panel");
     wrap.id = "ios-settings-panel-panel";
@@ -1357,26 +1288,14 @@
     wrap.appendChild(form);
     wrap.appendChild(passwordMessage);
 
-    var logoutButton = createStatefulButton("退出登录", "ios-settings-logout");
     var message = el("div", "ios-settings-account-message");
     message.setAttribute("role", "status");
     message.setAttribute("aria-live", "polite");
-    logoutButton.addEventListener("click", function () {
-      logoutButton.run(logout, function (err) {
-        account.busy = false;
-        account.message = "退出登录失败：" + err.message;
-        syncAccountSettings();
-      }, null, function () {
-        window.location.replace("/login-v2/");
-      });
-    });
-    wrap.appendChild(logoutButton);
     wrap.appendChild(message);
     return {
       node: wrap,
       user: user,
       role: role,
-      logout: logoutButton,
       message: message,
       currentPassword: current,
       newSelfPassword: next,
@@ -1523,7 +1442,6 @@
         ? (account.admin ? "管理员" : "普通用户")
         : "";
     }
-    idleButton(settingsRefs.logout, account.busy);
     if (settingsRefs.accountMessage) {
       settingsRefs.accountMessage.textContent = account.message || (account.loaded ? "当前会话有效" : "");
     }
@@ -1562,10 +1480,7 @@
       var row = el("div", "ios-settings-user-row");
       row.appendChild(el("div", "ios-settings-user-name", item.user + (item.admin ? "（管理员）" : "")));
       if (!item.admin) {
-        var remove = el("button", "ios-settings-user-delete", "删除");
-        remove.type = "button";
-        remove.disabled = account.usersBusy;
-        remove.addEventListener("click", function () { deleteManagedUser(item.user); });
+        var actions = el("div", "ios-settings-user-actions");
         var reset = el("button", "ios-settings-user-reset", "改密");
         reset.type = "button";
         reset.disabled = account.usersBusy;
@@ -1574,8 +1489,13 @@
           renderSettings();
           if (settingsRefs.resetPassword) settingsRefs.resetPassword.focus();
         });
-        row.appendChild(reset);
-        row.appendChild(remove);
+        var remove = el("button", "ios-settings-user-delete", "删除");
+        remove.type = "button";
+        remove.disabled = account.usersBusy;
+        remove.addEventListener("click", function () { deleteManagedUser(item.user); });
+        actions.appendChild(reset);
+        actions.appendChild(remove);
+        row.appendChild(actions);
       }
       settingsRefs.usersList.appendChild(row);
     });
@@ -1621,7 +1541,7 @@
     var copy = el("div");
     var title = el("h2", "ios-settings-dialog-title", "设置");
     title.id = "ios-settings-title";
-    var description = el("p", "ios-settings-dialog-description", "管理日历、面板和账号");
+    var description = el("p", "ios-settings-dialog-description", "管理日历、面板、Steam 和账号");
     description.id = "ios-settings-description";
     copy.appendChild(title);
     copy.appendChild(description);
@@ -1638,7 +1558,7 @@
     nav.setAttribute("role", "tablist");
     nav.setAttribute("aria-label", "设置分类");
     var tabs = {};
-    ["calendar", "panel", "account", "users"].forEach(function (section) {
+    ["calendar", "panel", "steam", "account", "users"].forEach(function (section) {
       var tab = el("button", "ios-settings-tab", SETTINGS_LABELS[section]);
       tab.type = "button";
       tab.id = "ios-settings-tab-" + section;
@@ -1666,12 +1586,15 @@
     calendarContent.node.setAttribute("aria-labelledby", "ios-settings-tab-calendar");
     var panelContent = buildPanelSettings();
     panelContent.node.setAttribute("aria-labelledby", "ios-settings-tab-panel");
+    var steamContent = buildSteamSettings();
+    steamContent.node.setAttribute("aria-labelledby", "ios-settings-tab-steam");
     var accountContent = buildAccountSettings();
     accountContent.node.setAttribute("aria-labelledby", "ios-settings-tab-account");
     var usersContent = buildUsersSettings();
     usersContent.node.setAttribute("aria-labelledby", "ios-settings-tab-users");
     content.appendChild(calendarContent.node);
     content.appendChild(panelContent.node);
+    content.appendChild(steamContent.node);
     content.appendChild(accountContent.node);
     content.appendChild(usersContent.node);
     layout.appendChild(content);
@@ -1686,7 +1609,6 @@
       fundInput: panelContent.fundInput,
       addFund: panelContent.addFund,
       fundMessage: panelContent.fundMessage,
-      logout: accountContent.logout,
       accountUser: accountContent.user,
       accountRole: accountContent.role,
       accountMessage: accountContent.message,
@@ -1709,6 +1631,7 @@
       panels: {
         calendar: calendarContent.node,
         panel: panelContent.node,
+        steam: steamContent.node,
         account: accountContent.node,
         users: usersContent.node,
       },
@@ -1716,7 +1639,6 @@
         calendarContent.save,
         calendarContent.clear,
         panelContent.addFund,
-        accountContent.logout,
         accountContent.changePassword,
         usersContent.createUser,
         usersContent.resetPasswordButton,
@@ -1787,6 +1709,8 @@
       ? settingsRefs.input
       : settingsRefs && settingsSection === "panel" && settingsRefs.fundInput
         ? settingsRefs.fundInput
+        : settingsRefs && settingsSection === "steam"
+        ? (document.getElementById("ios-steam-settings-input") || settingsRefs.close)
         : settingsRefs && settingsSection === "account" && settingsRefs.currentPassword
           ? settingsRefs.currentPassword
           : settingsRefs && settingsSection === "users" && settingsRefs.newUser
@@ -1885,6 +1809,7 @@
     window.setTimeout(focusSettings, 0);
     if (!calendar.loaded) loadCalendar();
     if (!account.loaded) loadAccount();
+    document.dispatchEvent(new CustomEvent("homepage-settings-open", { detail: { section: settingsSection } }));
   }
 
   function beginSettingsDrag(event) {
@@ -2131,7 +2056,7 @@
     var before = null;
     for (var j = 0; j < serviceGroups.length; j++) {
       var nextTitle = serviceGroups[j].querySelector(".service-group-name");
-      if (nextTitle && nextTitle.textContent.trim() === "丙") {
+      if (nextTitle && (nextTitle.textContent.trim() === "游戏" || nextTitle.textContent.trim() === "丙")) {
         before = serviceGroups[j];
         break;
       }
@@ -2223,6 +2148,17 @@
     return true;
   }
 
+
+  window.__homepageOpenSettings = function (section) {
+    if (section) settingsSection = section;
+    if (settingsPhase === "open" || settingsPhase === "opening") {
+      selectSettingsSection(section || settingsSection, false);
+      return;
+    }
+    var toggle = settingsMounted && settingsMounted.querySelector(".ios-settings-toggle");
+    openSettings(toggle);
+  };
+
   var inited = false;
 
   function init() {
@@ -2261,6 +2197,678 @@
   } else {
     init();
   }
+})();
+
+
+/**
+ * Homepage custom.js — Steam 游戏卡片
+ *
+ * 数据来自 steam-monitor。未绑定不报错，只引导去设置填写主页链接。
+ * 最近游戏支持列表 / 封面两种样式，可在卡片上切换。
+ */
+(function () {
+  "use strict";
+
+  var CARD_ID = "ios-steam";
+  var GROUP_ID = "ios-steam-group";
+  var GROUP_NAME = "游戏";
+  var PLACE_AFTER = "乙";
+  var PLACE_BEFORE = "丙";
+  var STYLE_KEY = "homepage-steam-style";
+  var FILTER_KEY = "homepage-steam-min-minutes";
+  var POLL_MS = 60000;
+  var BASE_PORT = "8091";
+  var resolvedBase = null;
+  var probing = null;
+  var state = {
+    loaded: false,
+    bound: false,
+    hasApiKey: true,
+    input: "",
+    profile: null,
+    games: [],
+    lastRefresh: null,
+    lastError: null,
+    netError: null
+  };
+  var settings = { draft: "", message: "", busy: false, refs: null };
+  var styleMode = readStyle();
+  var minMinutes = readMinMinutes();
+  var timer = null;
+  var mounted = null;
+  var inited = false;
+
+  function candidates() {
+    var list = [];
+    if (window.STEAM_MONITOR_BASE) list.push(window.STEAM_MONITOR_BASE);
+    list.push("/steam-monitor");
+    list.push(location.protocol + "//" + location.hostname + ":" + BASE_PORT);
+    return list;
+  }
+
+  function probe(base) {
+    return fetch(base + "/healthz", { cache: "no-store" })
+      .then(function (resp) {
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        return resp.json();
+      })
+      .then(function (body) {
+        if (!body || body.ok !== true) throw new Error("非 Steam 监控服务");
+        return base;
+      });
+  }
+
+  function resolveBase() {
+    if (resolvedBase) return Promise.resolve(resolvedBase);
+    if (probing) return probing;
+    var list = candidates();
+    probing = list.reduce(function (chain, base) {
+      return chain.catch(function () { return probe(base); });
+    }, Promise.reject()).then(function (base) {
+      resolvedBase = base;
+      probing = null;
+      return base;
+    }).catch(function () {
+      probing = null;
+      throw new Error("找不到 Steam 监控服务");
+    });
+    return probing;
+  }
+
+  function api(path, options) {
+    return resolveBase().then(function (base) {
+      return fetch(base + path, Object.assign({ cache: "no-store" }, options || {})).then(function (resp) {
+        return resp.json().then(function (body) {
+          if (!resp.ok) throw new Error((body && body.error) || ("HTTP " + resp.status));
+          return body;
+        }, function () {
+          if (!resp.ok) resolvedBase = null;
+          throw new Error("HTTP " + resp.status);
+        });
+      });
+    });
+  }
+
+  function readStyle() {
+    try {
+      return window.localStorage.getItem(STYLE_KEY) === "tiles" ? "tiles" : "list";
+    } catch (error) {
+      return "list";
+    }
+  }
+
+  function persistStyle(value) {
+    styleMode = value === "tiles" ? "tiles" : "list";
+    try { window.localStorage.setItem(STYLE_KEY, styleMode); } catch (error) {}
+  }
+
+  function clampMinutes(value) {
+    var minutes = Math.round(Number(value));
+    if (!isFinite(minutes) || minutes < 0) return 0;
+    if (minutes > 10080) return 10080;
+    return minutes;
+  }
+
+  function readMinMinutes() {
+    try {
+      var raw = window.localStorage.getItem(FILTER_KEY);
+      if (raw == null) {
+        var legacy = window.localStorage.getItem("homepage-steam-min-hours");
+        if (legacy != null) return clampMinutes(parseFloat(legacy) * 60);
+      }
+      return clampMinutes(raw);
+    } catch (error) {
+      return 0;
+    }
+  }
+
+  function persistMinMinutes(value) {
+    minMinutes = clampMinutes(value);
+    try { window.localStorage.setItem(FILTER_KEY, String(minMinutes)); } catch (error) {}
+  }
+
+  function visibleGames() {
+    var games = Array.isArray(state.games) ? state.games : [];
+    if (!minMinutes) return games.slice();
+    return games.filter(function (game) {
+      return (Number(game && game.playtime_2weeks) || 0) >= minMinutes;
+    });
+  }
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined && text !== null) node.textContent = text;
+    return node;
+  }
+
+  function groupByName(name) {
+    var groups = document.getElementById("layout-groups");
+    if (!groups) return null;
+    var nodes = groups.querySelectorAll(".services-group");
+    for (var i = 0; i < nodes.length; i++) {
+      var title = nodes[i].querySelector(".service-group-name");
+      if (title && title.textContent.trim() === name) return nodes[i];
+    }
+    return null;
+  }
+
+  function shortTime(iso) {
+    if (!iso) return "--";
+    var match = /T(\d{2}:\d{2})/.exec(iso);
+    return match ? match[1] : iso;
+  }
+
+  function formatHours(minutes) {
+    var value = Number(minutes) || 0;
+    if (value < 60) return value + " 分钟";
+    var hours = value / 60;
+    if (hours >= 100) return Math.round(hours) + " 小时";
+    var rounded = Math.round(hours * 10) / 10;
+    return (rounded % 1 === 0 ? String(Math.round(rounded)) : rounded.toFixed(1)) + " 小时";
+  }
+
+  function formatRecentHours(game) {
+    var value = Number(game && game.playtime_2weeks) || 0;
+    if (value > 0) return formatHours(value);
+    return "有运行";
+  }
+
+  function openSteamSettings() {
+    if (typeof window.__homepageOpenSettings === "function") {
+      window.__homepageOpenSettings("steam");
+    }
+  }
+
+  function applyImageFallback(img, urls) {
+    var index = 0;
+    img.addEventListener("error", function () {
+      index += 1;
+      if (index < urls.length && urls[index]) img.src = urls[index];
+      else img.style.visibility = "hidden";
+    });
+  }
+
+  function proxiedImage(url) {
+    if (!url) return "";
+    var base = resolvedBase || "/steam-monitor";
+    return base + "/img?url=" + encodeURIComponent(url);
+  }
+
+  function steamImage(img, urls) {
+    var list = [];
+    (urls || []).forEach(function (url) {
+      if (url) list.push(proxiedImage(url));
+    });
+    img.referrerPolicy = "no-referrer";
+    img.decoding = "async";
+    if (!list.length) return;
+    img.src = list[0];
+    applyImageFallback(img, list);
+  }
+
+  function profileLink(profile) {
+    return profile.profile_url || (profile.steamid ? ("https://steamcommunity.com/profiles/" + profile.steamid) : "");
+  }
+
+  function steamItem(group) {
+    var lists = group.querySelectorAll(".services-list");
+    var list = null;
+    for (var i = 0; i < lists.length; i++) {
+      if (lists[i].querySelector("#" + CARD_ID + "-item") || !lists[i].querySelector("li.service")) {
+        list = lists[i];
+        break;
+      }
+    }
+    if (!list) {
+      list = el("ul", "flex flex-col mt-3 services-list");
+      group.appendChild(list);
+    }
+    list.classList.add("flex", "flex-col", "mt-3", "services-list");
+    var item = document.getElementById(CARD_ID + "-item");
+    if (!item) {
+      item = el("li", "service");
+      item.id = CARD_ID + "-item";
+      item.setAttribute("data-name", "Steam");
+    }
+    if (item.parentElement !== list) list.appendChild(item);
+    return item;
+  }
+
+  function insertionPoint() {
+    var groups = document.getElementById("layout-groups");
+    if (!groups) return null;
+    var serviceGroups = groups.querySelectorAll(".services-group");
+    for (var i = 0; i < serviceGroups.length; i++) {
+      if (serviceGroups[i].id === GROUP_ID) continue;
+      var title = serviceGroups[i].querySelector(".service-group-name");
+      if (title && title.textContent.trim() === GROUP_NAME) {
+        document.querySelectorAll("#" + GROUP_ID).forEach(function (node) { node.remove(); });
+        return { parent: steamItem(serviceGroups[i]), before: null };
+      }
+    }
+
+    var host = document.getElementById(GROUP_ID);
+    document.querySelectorAll("#" + GROUP_ID).forEach(function (node, index) {
+      if (index > 0) node.remove();
+    });
+    if (host && host.parentElement !== groups) host.remove();
+    host = groups.querySelector("#" + GROUP_ID);
+    if (!host) {
+      host = el("div", "services-group ios-steam-group flex-1 basis-full md:basis-1/2 lg:basis-1/3 xl:basis-1/4 p-1 pb-0 self-start");
+      host.id = GROUP_ID;
+    }
+    var heading = host.querySelector(".service-group-name");
+    if (!heading) {
+      heading = el("h2", "flex text-theme-800 dark:text-theme-300 text-xl font-medium service-group-name", GROUP_NAME);
+    }
+    var header = heading.closest(".group") || heading.parentElement;
+    if (!header || header === host) {
+      header = el("div", "flex w-full select-none items-center group");
+      header.appendChild(heading);
+    }
+    if (header.parentElement !== host) host.insertBefore(header, host.firstChild);
+
+    var before = groupByName(PLACE_BEFORE);
+    var after = groupByName(PLACE_AFTER);
+    var desiredBefore = null;
+    if (after && after.parentElement === groups) desiredBefore = after.nextElementSibling === host ? host.nextElementSibling : after.nextElementSibling;
+    else if (before && before.parentElement === groups) desiredBefore = before;
+    if (host.parentElement !== groups || (desiredBefore && host.nextElementSibling !== desiredBefore)) {
+      groups.insertBefore(host, desiredBefore);
+    }
+    return { parent: steamItem(host), before: null };
+  }
+
+  function timePair(game) {
+    var recent = el("span", "ios-steam-time-recent");
+    recent.appendChild(document.createTextNode("近两周 "));
+    recent.appendChild(el("strong", "", formatRecentHours(game)));
+    var total = el("span", "ios-steam-time-total");
+    total.appendChild(document.createTextNode("总计 "));
+    total.appendChild(el("strong", "", formatHours(game.playtime_forever)));
+    return { recent: recent, total: total };
+  }
+
+  function buildList(games) {
+    var list = el("div", "ios-steam-list");
+    games.forEach(function (game) {
+      var row = el("div", "ios-steam-row");
+      var icon = el("img", "ios-steam-row-icon");
+      icon.alt = "";
+      icon.loading = "lazy";
+      steamImage(icon, [game.icon, game.capsule, game.header]);
+      row.appendChild(icon);
+      var body = el("div", "ios-steam-row-body");
+      var name = el("span", "ios-steam-row-name", game.name || "未知游戏");
+      name.title = game.name || "";
+      body.appendChild(name);
+      var meta = el("div", "ios-steam-row-meta");
+      var pair = timePair(game);
+      meta.appendChild(pair.recent);
+      meta.appendChild(pair.total);
+      body.appendChild(meta);
+      row.appendChild(body);
+      list.appendChild(row);
+    });
+    return list;
+  }
+
+  function buildTiles(games) {
+    var grid = el("div", "ios-steam-tiles");
+    games.forEach(function (game) {
+      var tile = el("div", "ios-steam-tile");
+      var img = el("img");
+      img.alt = game.name || "";
+      img.loading = "lazy";
+      steamImage(img, [game.header, game.capsule, game.icon]);
+      tile.appendChild(img);
+      var meta = el("div", "ios-steam-tile-meta");
+      meta.appendChild(el("span", "ios-steam-tile-name", game.name || "未知游戏"));
+      var time = el("span", "ios-steam-tile-time");
+      time.appendChild(el("em", "", formatRecentHours(game)));
+      time.appendChild(document.createTextNode(" · 总计 " + formatHours(game.playtime_forever)));
+      meta.appendChild(time);
+      tile.appendChild(meta);
+      grid.appendChild(tile);
+    });
+    return grid;
+  }
+
+  function renderEmpty(title, text, actionLabel) {
+    var box = el("div", "ios-steam-empty");
+    box.appendChild(el("div", "ios-steam-empty-title", title));
+    box.appendChild(el("p", "ios-steam-empty-text", text));
+    if (actionLabel) {
+      var button = el("button", "ios-steam-bind", actionLabel);
+      button.type = "button";
+      button.addEventListener("click", openSteamSettings);
+      box.appendChild(button);
+    }
+    return box;
+  }
+
+  function render() {
+    if (!mounted) return;
+    mounted.textContent = "";
+
+    var head = el("div", "ios-steam-head");
+    var user = el("div", "ios-steam-user");
+    var profile = state.profile || {};
+    var href = profileLink(profile);
+    if (profile.avatar) {
+      var avatar = el("img", "ios-steam-avatar");
+      avatar.alt = profile.name || "Steam 头像";
+      steamImage(avatar, [profile.avatar, profile.avatar_medium, profile.avatar_small]);
+      if (href) {
+        var avatarLink = el("a", "ios-steam-avatar-link");
+        avatarLink.href = href;
+        avatarLink.target = "_blank";
+        avatarLink.rel = "noopener noreferrer";
+        avatarLink.title = "打开 Steam 主页";
+        avatarLink.appendChild(avatar);
+        user.appendChild(avatarLink);
+      } else {
+        user.appendChild(avatar);
+      }
+    } else if (href) {
+      var fallbackLink = el("a", "ios-steam-avatar-link");
+      fallbackLink.href = href;
+      fallbackLink.target = "_blank";
+      fallbackLink.rel = "noopener noreferrer";
+      fallbackLink.title = "打开 Steam 主页";
+      fallbackLink.appendChild(el("div", "ios-steam-avatar ios-steam-avatar-fallback", "ST"));
+      user.appendChild(fallbackLink);
+    } else {
+      user.appendChild(el("div", "ios-steam-avatar ios-steam-avatar-fallback", "ST"));
+    }
+    var identity = el("div", "ios-steam-identity");
+    var displayName = profile.name || (state.bound ? "Steam" : "尚未绑定");
+    if (href && state.bound) {
+      var nameLink = el("a", "ios-steam-name");
+      nameLink.href = href;
+      nameLink.target = "_blank";
+      nameLink.rel = "noopener noreferrer";
+      nameLink.title = "打开 Steam 主页";
+      nameLink.textContent = displayName;
+      identity.appendChild(nameLink);
+    } else {
+      identity.appendChild(el("span", "ios-steam-name", displayName));
+    }
+    var status = el("span", "ios-steam-status");
+    if (!state.loaded) status.textContent = "加载中…";
+    else if (!state.bound) status.textContent = "绑定后显示最近游戏";
+    else if (profile.playing && profile.playing.name) {
+      status.textContent = "正在玩 " + profile.playing.name;
+      status.classList.add("is-playing");
+    } else if (profile.online) status.textContent = "在线";
+    else status.textContent = "最近在玩";
+    identity.appendChild(status);
+    user.appendChild(identity);
+    head.appendChild(user);
+
+    var tools = el("div", "ios-steam-tools");
+    tools.appendChild(el("span", "ios-steam-updated", state.loaded ? ("更新 " + shortTime(state.lastRefresh)) : ""));
+    head.appendChild(tools);
+    mounted.appendChild(head);
+
+    var body = el("div", "ios-steam-body");
+    if (state.netError) body.appendChild(el("div", "ios-steam-warn", state.netError));
+    else if (state.lastError) body.appendChild(el("div", "ios-steam-warn", state.lastError));
+
+    var games = visibleGames();
+    if (!state.loaded) {
+      body.appendChild(el("div", "ios-steam-empty-text", "正在读取 Steam…"));
+    } else if (!state.hasApiKey && !state.bound) {
+      body.appendChild(renderEmpty("还不能连接 Steam", "管理员需要先在服务器配置 Steam Web API Key，然后你再绑定主页链接。", "去设置看看"));
+    } else if (!state.bound) {
+      body.appendChild(renderEmpty("还没有绑定 Steam", "打开设置，粘贴你的 Steam 个人主页链接。资料和游戏详情需要公开。", "去绑定"));
+    } else if (!state.games.length) {
+      body.appendChild(renderEmpty("近两周没有游戏记录", "玩过之后这里会显示游戏图标、近两周时长和总时长。", null));
+    } else if (!games.length) {
+      body.appendChild(renderEmpty("没有符合条件的游戏", "近两周时长少于 " + minMinutes + " 分钟的已隐藏，可在设置里调低门槛。", "去设置"));
+    } else if (styleMode === "tiles") {
+      body.appendChild(buildTiles(games));
+    } else {
+      body.appendChild(buildList(games));
+    }
+    mounted.appendChild(body);
+    syncSteamSettings();
+  }
+
+  function applySnapshot(data) {
+    state.bound = data.bound === true;
+    state.hasApiKey = data.has_api_key !== false;
+    state.input = typeof data.input === "string" ? data.input : "";
+    state.profile = data.profile || null;
+    state.games = Array.isArray(data.games) ? data.games : [];
+    state.lastRefresh = data.last_refresh || null;
+    state.lastError = data.last_error || null;
+    state.netError = null;
+    state.loaded = true;
+    if (!settings.draft || settings.draft === state.input) settings.draft = state.input;
+  }
+
+  function load() {
+    return api("/api/steam").then(function (data) {
+      applySnapshot(data);
+      render();
+    }).catch(function () {
+      state.loaded = true;
+      state.netError = "暂时读不到 Steam 服务，稍后再试。";
+      render();
+    });
+  }
+
+  function bindSteam(url) {
+    settings.busy = true;
+    settings.message = "保存中…";
+    syncSteamSettings();
+    return api("/api/steam", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: url })
+    }).then(function (data) {
+      applySnapshot(data);
+      settings.busy = false;
+      settings.message = "已绑定 " + ((state.profile && state.profile.name) || "Steam");
+      settings.draft = state.input;
+      render();
+    }).catch(function (err) {
+      settings.busy = false;
+      settings.message = err.message || "绑定失败";
+      syncSteamSettings();
+      throw err;
+    });
+  }
+
+  function unbindSteam() {
+    settings.busy = true;
+    settings.message = "清除中…";
+    syncSteamSettings();
+    return api("/api/steam", { method: "DELETE" }).then(function (data) {
+      applySnapshot(data);
+      settings.busy = false;
+      settings.message = "已解除绑定";
+      settings.draft = "";
+      render();
+    }).catch(function (err) {
+      settings.busy = false;
+      settings.message = err.message || "清除失败";
+      syncSteamSettings();
+      throw err;
+    });
+  }
+
+  function ensureSteamSettings() {
+    var panel = document.getElementById("ios-settings-steam-panel");
+    if (!panel) return;
+    if (settings.refs && panel.contains(settings.refs.form)) {
+      syncSteamSettings();
+      return;
+    }
+    panel.textContent = "";
+    panel.appendChild(el("p", "ios-settings-panel-description", "粘贴 Steam 个人主页链接，例如 https://steamcommunity.com/id/你的名字 。资料和游戏详情需设为公开。"));
+    var form = el("form", "ios-fund-calendar-form");
+    var input = el("input", "ios-fund-calendar-input");
+    input.id = "ios-steam-settings-input";
+    input.type = "text";
+    input.placeholder = "https://steamcommunity.com/id/…";
+    input.setAttribute("aria-label", "Steam 主页链接");
+    input.addEventListener("input", function () { settings.draft = input.value; });
+    var actions = el("div", "ios-settings-actions");
+    var save = el("button", "ios-stateful-button ios-fund-calendar-save", "保存");
+    save.type = "submit";
+    var clear = el("button", "ios-stateful-button ios-fund-calendar-clear", "清除");
+    clear.type = "button";
+    clear.addEventListener("click", function () {
+      if (settings.busy || !state.bound) return;
+      unbindSteam();
+    });
+    actions.appendChild(save);
+    actions.appendChild(clear);
+    form.appendChild(input);
+    form.appendChild(actions);
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var value = (input.value || "").trim();
+      if (!value) {
+        settings.message = "请填写 Steam 主页链接";
+        syncSteamSettings();
+        return;
+      }
+      bindSteam(value);
+    });
+    panel.appendChild(form);
+    var message = el("div", "ios-fund-calendar-message");
+    message.setAttribute("role", "status");
+    panel.appendChild(message);
+
+    var styleBlock = el("div", "ios-settings-steam-block");
+    styleBlock.appendChild(el("div", "ios-settings-section-title", "显示样式"));
+    var styles = el("div", "ios-settings-steam-styles");
+    var styleButtons = {};
+    ["list", "tiles"].forEach(function (mode) {
+      var button = el("button", "ios-settings-steam-style", mode === "list" ? "列表" : "封面");
+      button.type = "button";
+      button.addEventListener("click", function () {
+        persistStyle(mode);
+        render();
+        syncSteamSettings();
+      });
+      styleButtons[mode] = button;
+      styles.appendChild(button);
+    });
+    styleBlock.appendChild(styles);
+    panel.appendChild(styleBlock);
+
+    var filterBlock = el("div", "ios-settings-steam-block");
+    filterBlock.appendChild(el("div", "ios-settings-section-title", "时长过滤"));
+    var filterRow = el("label", "ios-settings-steam-filter");
+    filterRow.appendChild(document.createTextNode("近两周少于"));
+    var filter = el("input", "ios-settings-steam-filter-input");
+    filter.type = "number";
+    filter.min = "0";
+    filter.max = "10080";
+    filter.step = "1";
+    filter.inputMode = "numeric";
+    filter.setAttribute("aria-label", "近两周少于多少分钟的游戏不显示");
+    function applyFilterInput() {
+      persistMinMinutes((filter.value || "").trim() === "" ? 0 : filter.value);
+      render();
+      syncSteamSettings();
+    }
+    filter.addEventListener("change", applyFilterInput);
+    filter.addEventListener("blur", applyFilterInput);
+    filter.addEventListener("input", function () {
+      var raw = (filter.value || "").trim();
+      if (raw === "") {
+        persistMinMinutes(0);
+        render();
+        return;
+      }
+      if (!/^\d+$/.test(raw)) return;
+      persistMinMinutes(raw);
+      render();
+    });
+    filterRow.appendChild(filter);
+    filterRow.appendChild(document.createTextNode("分钟的不显示"));
+    filterBlock.appendChild(filterRow);
+    filterBlock.appendChild(el("p", "ios-settings-steam-hint", "按近两周游戏时长过滤。填 0 则显示全部。"));
+    panel.appendChild(filterBlock);
+
+    settings.refs = {
+      form: form,
+      input: input,
+      save: save,
+      clear: clear,
+      message: message,
+      styleButtons: styleButtons,
+      filter: filter
+    };
+    syncSteamSettings();
+  }
+
+  function syncSteamSettings() {
+    if (!settings.refs) return;
+    var nextValue = settings.draft || state.input || "";
+    var nextMessage = settings.message || (state.bound && state.profile ? ("当前：" + state.profile.name) : "");
+    if (settings.refs.input.value !== nextValue) settings.refs.input.value = nextValue;
+    settings.refs.input.disabled = settings.busy;
+    settings.refs.save.disabled = settings.busy;
+    settings.refs.clear.disabled = settings.busy || !state.bound;
+    if (settings.refs.message.textContent !== nextMessage) settings.refs.message.textContent = nextMessage;
+    if (settings.refs.styleButtons) {
+      ["list", "tiles"].forEach(function (mode) {
+        var button = settings.refs.styleButtons[mode];
+        if (button) button.setAttribute("aria-pressed", String(styleMode === mode));
+      });
+    }
+    if (settings.refs.filter && document.activeElement !== settings.refs.filter) {
+      var shown = String(minMinutes);
+      if (settings.refs.filter.value !== shown) settings.refs.filter.value = shown;
+    }
+  }
+
+  function mount() {
+    if (mounted && document.body.contains(mounted)) return true;
+    var point = insertionPoint();
+    if (!point) return false;
+    var node = el("div", "service-card ios-steam mb-2 rounded-md shadow-md");
+    node.id = CARD_ID;
+    point.parent.insertBefore(node, point.before);
+    mounted = node;
+    render();
+    load();
+    return true;
+  }
+
+  function init() {
+    if (inited) return;
+    inited = true;
+    mount();
+    ensureSteamSettings();
+    var obs = new MutationObserver(function () {
+      if (!mounted || !document.body.contains(mounted)) mount();
+      var panel = document.getElementById("ios-settings-steam-panel");
+      if (panel && !(settings.refs && panel.contains(settings.refs.form))) ensureSteamSettings();
+    });
+    obs.observe(document.documentElement, { childList: true, subtree: true });
+    timer = setInterval(function () {
+      if (document.hidden) return;
+      if (mounted && document.body.contains(mounted)) load();
+    }, POLL_MS);
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden && mounted && document.body.contains(mounted)) load();
+    });
+    document.addEventListener("homepage-settings-open", function () {
+      ensureSteamSettings();
+      if (!state.loaded) load();
+    });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
 })();
 
 /* ============ 主题：仅保留明暗模式并同步原生颜色 ============ */
@@ -2380,4 +2988,3 @@
     applyMode(mode);
   });
 })();
-

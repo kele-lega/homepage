@@ -10,7 +10,8 @@ import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
+from urllib.request import Request, urlopen
 
 import bcrypt
 
@@ -21,6 +22,8 @@ AUTH_USERS_FILE = os.environ.get("AUTH_USERS_FILE", "/app/data/users.json")
 ADMIN_USER = os.environ.get("AUTH_ADMIN_USER", "kele")
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "")
 SESSION_TTL = int(os.environ.get("SESSION_TTL", "86400"))
+HOMEPAGE_SESSION_URL = os.environ.get("HOMEPAGE_SESSION_URL", "")
+AUTH_BRIDGE_SECRET = os.environ.get("AUTH_BRIDGE_SECRET", "")
 USER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 MAX_USERS = 50
 USERS_LOCK = threading.RLock()
@@ -174,6 +177,31 @@ def public_user(user):
     return {"user": user, "admin": is_admin(user)}
 
 
+def credential_version(password_hash):
+    return hmac.new(SESSION_SECRET.encode(), password_hash.encode(), hashlib.sha256).hexdigest()
+
+
+def native_session_user(cookie):
+    """Let Homepage validate its own JWT; never trust browser identity headers."""
+    if not cookie or len(cookie) > 16384:
+        return None
+    try:
+        request = Request(HOMEPAGE_SESSION_URL, headers={"Cookie": cookie, "Accept": "application/json"})
+        with urlopen(request, timeout=5) as response:
+            if response.status != 200:
+                return None
+            session = json.loads(response.read(16385))
+        user = session.get("user", {})
+        name = user.get("name")
+        version = user.get("credentialVersion")
+        password_hash = current_users().get(name) if valid_username(name) else None
+        if password_hash and isinstance(version, str) and hmac.compare_digest(version, credential_version(password_hash)):
+            return name
+    except (OSError, ValueError, TypeError, AttributeError):
+        pass
+    return None
+
+
 def json_response(handler, status, body, headers=None):
     raw = json.dumps(body, ensure_ascii=False).encode()
     handler.send_response(status)
@@ -225,17 +253,36 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/auth/users":
             self._users_get()
             return
-        if path != "/auth/check":
+        if path not in ("/auth/check", "/auth/check-admin"):
             json_response(self, 404, {"error": "not found"})
             return
         user = self.current_user()
         if user:
+            if path == "/auth/check-admin" and not is_admin(user):
+                json_response(self, 403, {"error": "forbidden"}, {"Cache-Control": "no-store"})
+                return
             json_response(self, 200, {"authenticated": True, "user": user}, {"X-Authenticated-User": user})
         else:
-            json_response(self, 302, {"authenticated": False}, {"Location": "/login-v2/"})
+            if HOMEPAGE_SESSION_URL:
+                original = self.headers.get("X-Forwarded-Uri", "/")
+                if not original.startswith("/") or original.startswith("//") or "\\" in original:
+                    original = "/"
+                if original.startswith(("/api/", "/calendar/", "/fund-monitor/", "/steam-monitor/")):
+                    json_response(self, 401, {"error": "unauthorized"}, {"Cache-Control": "no-store"})
+                    return
+                location = "/auth/signin?callbackUrl=" + quote(original, safe="")
+            else:
+                location = "/login-v2/"
+            json_response(self, 302, {"authenticated": False}, {"Location": location, "Cache-Control": "no-store"})
 
     def do_POST(self):
         path = urlsplit(self.path).path
+        if path == "/internal/verify":
+            self._verify_native_credentials()
+            return
+        if HOMEPAGE_SESSION_URL and path in ("/auth/login", "/auth/logout"):
+            json_response(self, 410, {"error": "Use Homepage native authentication", "signin": "/auth/signin"})
+            return
         if path == "/auth/logout":
             # Sessions are stateless; this removes the browser cookie but cannot revoke a copied token before its TTL.
             cookie = "session=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Secure; SameSite=Lax"
@@ -271,9 +318,35 @@ class Handler(BaseHTTPRequestHandler):
         json_response(self, 404, {"error": "not found"})
 
     def current_user(self):
+        if HOMEPAGE_SESSION_URL:
+            return native_session_user(self.headers.get("Cookie", ""))
         cookies = http.cookies.SimpleCookie(self.headers.get("Cookie", ""))
         morsel = cookies.get("session")
         return valid_session(morsel.value) if morsel else None
+
+    def _verify_native_credentials(self):
+        expected = "Bearer " + AUTH_BRIDGE_SECRET
+        if not AUTH_BRIDGE_SECRET or not hmac.compare_digest(self.headers.get("Authorization", ""), expected):
+            json_response(self, 403, {"error": "forbidden"})
+            return
+        try:
+            data = json_body(self)
+            username = data.get("username")
+            password = data.get("password")
+            if not valid_username(username) or not isinstance(password, str) or len(password) > 128:
+                raise ValueError("invalid credentials")
+        except (ValueError, TypeError):
+            json_response(self, 400, {"error": "invalid request"})
+            return
+        password_hash = current_users().get(username)
+        if not verify_password(password, password_hash):
+            json_response(self, 401, {"error": "invalid credentials"})
+            return
+        json_response(self, 200, {
+            "id": username,
+            "name": username,
+            "credentialVersion": credential_version(password_hash),
+        }, {"Cache-Control": "no-store"})
 
     def require_admin(self):
         user = self.current_user()

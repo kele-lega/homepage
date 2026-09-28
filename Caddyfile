@@ -1,26 +1,38 @@
 kelelega.dpdns.org {
-	# 明确固定路由顺序：登录页和登录接口必须先于会话校验处理。
+	# 登录页、会话和退出由 Homepage 原生 NextAuth 提供。
 	route {
+		# 只信认证桥接返回的身份，清除客户端伪造的同名请求头。
+		request_header -X-Authenticated-User
 
-		handle /login {
-			redir /login-v2/ permanent
-		}
-		handle_path /login-v2/* {
-			reverse_proxy login-page:80
+		@legacy_login path /login /login-v2 /login-v2/*
+		handle @legacy_login {
+			redir * /auth/signin 308
 		}
 
-		handle /auth/* {
+		@account_api path /auth/me /auth/users /auth/password /auth/login /auth/logout
+		handle @account_api {
+			header Cache-Control "no-store"
 			reverse_proxy auth-service:8080
 		}
 
 		handle /api/config/custom.css {
-			forward_auth auth-service:8080 {
-				uri /auth/check
-				copy_headers X-Authenticated-User
-			}
 			header {
 				Cache-Control "no-store, no-cache, must-revalidate"
 				Pragma "no-cache"
+			}
+			reverse_proxy homepage:3000
+		}
+
+		@public path /auth/* /api/auth/* /_next/static/* /icons/* /images/* /webhead.ico /favicon.ico /robots.txt /manifest.json
+		handle @public {
+			reverse_proxy homepage:3000
+		}
+
+		# 新版 MCP 为管理接口；即使以后启用也仅允许管理员访问。
+		handle /api/mcp {
+			forward_auth auth-service:8080 {
+				uri /auth/check-admin
+				copy_headers X-Authenticated-User
 			}
 			reverse_proxy homepage:3000
 		}
@@ -53,22 +65,35 @@ kelelega.dpdns.org {
 		}
 
 		# 日历设置 API 与 iCal 读取共用同源路径，注入当前登录用户。
-		handle_path /calendar/* {
+		handle /calendar/* {
 			forward_auth auth-service:8080 {
 				uri /auth/check
 				copy_headers X-Authenticated-User
 			}
+			uri strip_prefix /calendar
 			reverse_proxy ical-proxy:8089 {
 				header_up X-Authenticated-User {http.request.header.X-Authenticated-User}
 			}
 		}
 
-		handle_path /fund-monitor/* {
+		handle /fund-monitor/* {
 			forward_auth auth-service:8080 {
 				uri /auth/check
 				copy_headers X-Authenticated-User
 			}
+			uri strip_prefix /fund-monitor
 			reverse_proxy fund-monitor:8090 {
+				header_up X-Authenticated-User {http.request.header.X-Authenticated-User}
+			}
+		}
+
+		handle /steam-monitor/* {
+			forward_auth auth-service:8080 {
+				uri /auth/check
+				copy_headers X-Authenticated-User
+			}
+			uri strip_prefix /steam-monitor
+			reverse_proxy steam-monitor:8091 {
 				header_up X-Authenticated-User {http.request.header.X-Authenticated-User}
 			}
 		}

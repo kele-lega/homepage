@@ -18,3 +18,6 @@ __pycache__/
 
 # 独立项目，不纳入 homepage 仓库
 real-time-fund/
+# steam-monitor 用户绑定与缓存
+steam-monitor/data/users/
+steam-monitor/data/*.tmp

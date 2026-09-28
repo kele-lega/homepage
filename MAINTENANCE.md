@@ -14,20 +14,23 @@
   ├─ 生产：https://kelelega.dpdns.org/*
   │     │
   │   Caddy + auth-service（多用户会话认证）
-  │     ├─ /calendar/*      → ical-proxy:8089 + X-Authenticated-User
-  │     ├─ /fund-monitor/*  → fund-monitor:8090 + X-Authenticated-User
-  │     └─ 其余              → homepage:3000 + X-Authenticated-User
+  │     ├─ /calendar/*       → ical-proxy:8089 + X-Authenticated-User
+  │     ├─ /fund-monitor/*   → fund-monitor:8090 + X-Authenticated-User
+  │     ├─ /steam-monitor/*  → steam-monitor:8091 + X-Authenticated-User
+  │     └─ 其余               → homepage:3000 + X-Authenticated-User
   │                                  └─ 日历服务端代理再转发用户头到 ical-proxy
   │
   └─ 本地：http://localhost:3000（override 里 caddy 不启动）
-        homepage:3000 直接对外，fund-monitor 额外映射到宿主机 8090，使用 local 用户
+        homepage:3000 直接对外，fund-monitor 映射 8090、steam-monitor 映射 8091，使用 local 用户
 ```
 
 生产环境的认证用户名只由 Caddy 注入，浏览器自行提交的同名 header 不应被信任。基金服务按 `fund-monitor/data/users/<用户名>/` 分区；iCal 服务按 `ical-proxy/data/users.json` 选择上游并按用户缓存。登录后可在设置入口的「日历」板块保存或清除当前用户地址，在「账号」板块查看当前用户名并退出登录；日历 API 路径为 `/calendar/api/calendar`，登录成功后还会非阻断调用 `/calendar/api/calendar/refresh` 强制更新一次当前账号的缓存，账号 API 为 `/auth/me` 和 `/auth/logout`。退出登录会清除当前浏览器的 session cookie；由于 session 是无服务器状态签名令牌，复制出的旧令牌仍可在 TTL 内有效。
 
 homepage 本身是社区镜像（gethomepage），项目自身代码只有：
 - `config/custom.js` / `config/custom.css` —— 注入到 homepage 页面里的自定义 UI（基金卡片、农历等）
+- `config/settings.yaml` 的 `wallpapers.light` / `wallpapers.dark` —— 明暗壁纸路径，图片放 `public/`
 - `fund-monitor/` —— 独立的 Python 标准库服务，与 homepage 完全解耦，只通过 HTTP 交互
+- `steam-monitor/` —— 独立的 Steam 时长服务，按用户绑定主页链接，不依赖 Homepage 内部机制
 - `ical-proxy/` —— 另一个独立的小服务（日历代理），与基金监控无关
 - `Caddyfile` / `docker-compose*.yml` —— 编排与路由
 
@@ -108,16 +111,17 @@ use_estimate = (
 - **生产认证用户不生效**：确认 `.env` 使用 `AUTH_USERS`，每个用户一行“用户名 + bcrypt 哈希”，然后重建 `auth-service`；不要继续使用旧的 `AUTH_USER` / `AUTH_HASH`。管理员固定为 `kele`，普通账号可写在 `.env` 或由 kele 在设置页添加，持久化文件是 `auth-service/data/users.json`。
 - **普通用户仍能看到丁组 / 乙组关不掉**：确认浏览器已加载最新 `custom.js`。丁组只对 `kele` 显示；乙组开关在设置的「面板」中，按当前登录用户保存在 `localStorage`，关闭后整组移除，剩余分组会改成 3 栏或 2 栏以免留空。基金代码的添加和删除也在「面板」里，卡片上不再显示。
 - **改密失败**：自己改密码必须填写原密码；管理员改其他账号不需要原密码，入口在「账号管理」。
-- **某用户日历为空**：先确认该账号已在 Homepage 设置入口的「日历」中保存自己的地址；每个账号都要配置一次，系统不会从登录账号自动推导 Google 私有 iCalendar URL。再检查 `ical-proxy/data/users.json` 中存在完全相同的用户名，并检查 Homepage 容器启动日志中是否出现 `calendar identity patch applied`。正常请求按用户缓存 120 秒；每次登录会调用刷新接口绕过这层缓存（同一账号连续强刷有 15 秒冷却），刷新失败不会阻断登录。代理最多读取 5 MiB 的上游日历响应。
-- **Homepage 镜像升级后拒绝启动**：这是刻意的安全保护，表示 `entrypoint.sh` 找不到日历代理补丁目标。检查新镜像的 `httpProxy(integration.url, options)` 调用位置后再适配，不要删除该检查。
+- **某用户日历为空**：先确认该账号已在设置 →「日历」保存自己的地址；系统不会从用户名推导 Google 私有 iCalendar URL。再检查 `ical-proxy/data/users.json` 中用户名一致，`HOMEPAGE_CALENDAR_ORIGIN` 为 `http://ical-proxy:8089`，以及原生 `/api/services/proxy` 返回有效 iCalendar。正常请求按用户缓存 120 秒；进入面板后非阻断刷新当前用户缓存，同账号强刷有 15 秒冷却。代理最多读取 5 MiB 的上游响应。
+- **Homepage 升级后补丁构建失败**：源码适配在 `homepage-image/apply-patches.mjs`，固定上游 v2.4.0；版本或目标代码变化会拒绝构建。审核新源码后更新补丁与测试，不要绕过断言，也不要再修改 `.next`。
+- **旧登录地址或会话失效**：新版使用 `/auth/signin` 和 NextAuth Cookie，旧 `session` Cookie 不再授权。直接使用现有账号密码重新登录即可。删号、改密会使该账号旧会话失效；退出使用页面底部的原生按钮。
 
 按 `custom.js` 里 `candidates()` 的顺序逐个排查：
 
 1. **`fund-monitor` 容器没起**：`docker compose ps` 看它是不是 `running`。
 2. **本地直连但端口对不上**：确认 `docker-compose.override.yml` 里确实映射了 `8090:8090`，
    且浏览器访问的域名/IP 和 homepage 是同一个（探测用的是 `location.hostname`）。
-3. **生产环境 Caddy 路由没生效**：`curl -u user:pass https://域名/fund-monitor/healthz`，
-   如果这条都 404，检查 `Caddyfile` 里 `handle_path /fund-monitor/*` 是否在 `handle` 之前
+3. **生产环境 Caddy 路由没生效**：先在浏览器完成原生登录，再访问 `/fund-monitor/healthz`，
+   如果返回 404，检查 `Caddyfile` 里 `handle /fund-monitor/*` 是否在最后的 `handle` 之前
    （Caddy 的 `handle` 块互斥且按书写顺序匹配，顺序反了会被裸 `reverse_proxy homepage:3000` 抢走）。
 4. **手动强制指定地址调试**：浏览器控制台执行 `window.FUND_MONITOR_BASE = "http://ip:8090"`
    然后刷新（注意这个变量不会持久化，只对当次页面加载生效）。
@@ -174,10 +178,12 @@ cd ../ical-proxy && python3 -m unittest discover -p "test_*.py"
 curl -H 'X-Authenticated-User: local' localhost:8090/healthz
 curl -H 'X-Authenticated-User: local' localhost:8090/api/funds
 
-# 生产经 Caddy（用户名决定返回哪一份数据）
-curl -u admin:密码 https://kelelega.dpdns.org/fund-monitor/api/funds
-curl -u wzj:密码 https://kelelega.dpdns.org/fund-monitor/api/funds
-curl -u admin:密码 https://kelelega.dpdns.org/calendar/api/calendar
+# 生产经 Caddy：在浏览器分别登录不同账号后访问以下同源路径。
+# /auth/me
+# /fund-monitor/api/funds
+# /calendar/api/calendar
+# /steam-monitor/api/steam
+# 不使用 curl -u；诊断时不要把完整 Cookie 或私有日历 URL 粘贴到日志。
 
 # 数据文件直接查看/备份
 find fund-monitor/data/users -maxdepth 2 -type f -print
